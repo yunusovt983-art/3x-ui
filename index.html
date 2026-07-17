@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>3x-ui panel — control-plane для Xray, переписанный на Rust</title>
+<meta name="description" content="DDD-гексагон на Rust: 5 крейтов, 21 141 строка, 426 тестов. Панель оркеструет Xray-core по gRPC, сама трафик не передаёт. Разработка велась харнесом из параллельных агентов с адверсариальной проверкой каждой находки.">
+<meta property="og:title" content="3x-ui panel — control-plane для Xray, переписанный на Rust">
+<meta property="og:description" content="5 крейтов, 21 141 строка Rust, 426 тестов. Гексагональная архитектура, домен без единой внешней зависимости. Найдено и закрыто до мержа: обход rate-limit, утечка PII, дыра в сериализации TLS-конфига.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpolygon points='16,4 27,10 27,22 16,28 5,22 5,10' fill='none' stroke='%2338bdd4' stroke-width='2.2'/%3E%3Ccircle cx='16' cy='16' r='4' fill='%23e0a63e'/%3E%3C/svg%3E">
+<style>
+  :root{
+    --bg:#0a0f14; --bg2:#111820; --bg3:#161f29; --border:#243040;
+    --text:#e8eef2; --muted:#93a3b3; --faint:#57697c;
+    --accent:#38bdd4; --accent2:#e0a63e; --accent3:#7c8fe0;
+    --ok:#3fae7a; --next:#e0a63e; --danger:#d9635a;
+    --radius:14px; --maxw:1120px;
+    --grad:linear-gradient(120deg,#38bdd4 0%,#7c8fe0 55%,#e0a63e 100%);
+  }
+  :root[data-theme="light"]{
+    --bg:#f6f8fa; --bg2:#ffffff; --bg3:#eef2f5; --border:#dbe3ea;
+    --text:#131c24; --muted:#54677a; --faint:#8695a5;
+    --accent:#1b8fa3; --accent2:#a3721f; --accent3:#4c5fb8;
+    --ok:#207a52; --next:#a3721f; --danger:#b7392f;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth; scroll-padding-top:72px}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,Helvetica,Arial,sans-serif;
+    line-height:1.6; -webkit-font-smoothing:antialiased;
+  }
+  code,.mono{font-family:"SF Mono",ui-monospace,"Cascadia Code","JetBrains Mono",Menlo,Consolas,monospace}
+  a{color:var(--accent3); text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:var(--maxw); margin:0 auto; padding:0 22px}
+  section{padding:76px 0; border-top:1px solid var(--border)}
+  h2{font-size:clamp(1.5rem,3vw,2.1rem); margin:0 0 6px; letter-spacing:-.02em}
+  .sub{color:var(--muted); margin:0 0 34px; max-width:62ch}
+  .eyebrow{color:var(--accent); font-weight:700; font-size:.78rem; letter-spacing:.14em; text-transform:uppercase; margin-bottom:10px}
+  .grad{background:var(--grad); -webkit-background-clip:text; background-clip:text; color:transparent}
+
+  header.nav{position:sticky; top:0; z-index:50; backdrop-filter:blur(12px);
+    background:color-mix(in srgb,var(--bg) 78%, transparent); border-bottom:1px solid var(--border)}
+  header.nav .wrap{display:flex; align-items:center; gap:18px; height:60px}
+  .brand{display:flex; align-items:center; gap:9px; font-weight:800; letter-spacing:-.01em; color:var(--text); font-size:1.02rem; flex:0 0 auto}
+  .brand svg{width:24px; height:24px}
+  nav.links{display:flex; align-items:center; gap:22px; margin-left:auto; font-size:.92rem}
+  nav.links a{color:var(--muted)}
+  nav.links a:hover,nav.links a.active{color:var(--text); text-decoration:none}
+  .themebtn{background:var(--bg3); border:1px solid var(--border); color:var(--text); width:34px; height:34px; border-radius:9px; cursor:pointer; font-size:.95rem; display:inline-flex; align-items:center; justify-content:center}
+  .menutoggle{display:none}
+  .ghbtn{background:var(--bg3); border:1px solid var(--border); padding:7px 13px; border-radius:9px; color:var(--text)!important}
+
+  .hero{padding:88px 0 70px; border-top:none}
+  .h1{font-size:clamp(2.1rem,5.4vw,3.4rem); line-height:1.08; letter-spacing:-.03em; margin:0 0 20px; text-wrap:balance}
+  .lead{font-size:1.1rem; color:var(--muted); max-width:64ch; margin:0 0 28px}
+  .chips{display:flex; flex-wrap:wrap; gap:10px; margin-bottom:32px}
+  .chip{background:var(--bg2); border:1px solid var(--border); border-radius:999px; padding:8px 15px; font-size:.86rem; color:var(--muted)}
+  .chip b{color:var(--text)}
+  .cta{display:flex; flex-wrap:wrap; gap:12px}
+  .btn{display:inline-flex; align-items:center; gap:6px; padding:11px 20px; border-radius:10px; font-weight:600; font-size:.94rem; border:1px solid transparent}
+  .btn.primary{background:var(--accent); color:#04161a}
+  .btn.primary:hover{filter:brightness(1.08); text-decoration:none}
+  .btn.ghost{background:var(--bg2); border-color:var(--border); color:var(--text)!important}
+  .btn.ghost:hover{border-color:var(--accent); text-decoration:none}
+
+  .metrics{display:grid; grid-template-columns:repeat(6,1fr); gap:16px}
+  .metric{background:var(--bg2); border:1px solid var(--border); border-radius:var(--radius); padding:20px 14px; text-align:center}
+  .metric .num{font-size:1.6rem; font-weight:800; letter-spacing:-.02em; font-variant-numeric:tabular-nums}
+  .metric .lbl{color:var(--muted); font-size:.78rem; margin-top:4px}
+
+  .grid{display:grid; gap:16px}
+  .g3{grid-template-columns:repeat(3,1fr)}
+  .g2{grid-template-columns:repeat(2,1fr)}
+  .card{background:var(--bg2); border:1px solid var(--border); border-radius:var(--radius); padding:20px 22px; transition:transform .15s ease, border-color .15s ease}
+  .card:hover{border-color:color-mix(in srgb,var(--accent) 55%,var(--border)); transform:translateY(-3px)}
+  .card .ic{font-size:1.6rem}
+  .card h3{margin:12px 0 6px; font-size:1.15rem; letter-spacing:-.01em}
+  .card h3 .tag{font-size:.72rem; color:var(--accent); font-weight:700; letter-spacing:.08em; margin-left:6px}
+  .card p{margin:0 0 12px; color:var(--muted); font-size:.94rem}
+  .card .loc{font-size:.8rem; color:var(--faint); font-family:inherit}
+  .card ul{margin:8px 0 0; padding-left:18px; color:var(--muted); font-size:.9rem}
+  .card ul li{margin:3px 0}
+
+  .feat{display:grid; grid-template-columns:1.05fr 1fr; gap:34px; align-items:start}
+  .feat .list{display:grid; gap:14px}
+  .feat .row{display:flex; gap:14px; background:var(--bg2); border:1px solid var(--border); border-radius:12px; padding:16px 18px}
+  .feat .row .dot{flex:0 0 auto; width:11px; height:11px; border-radius:50%; background:var(--grad); margin-top:7px}
+  .feat .row b{display:block; margin-bottom:2px}
+  .feat .row span{color:var(--muted); font-size:.92rem}
+  .panel{background:var(--bg2); border:1px solid var(--border); border-radius:var(--radius); padding:20px; position:sticky; top:80px}
+  .panel h4{margin:0 0 12px; font-size:.85rem; letter-spacing:.06em; text-transform:uppercase; color:var(--muted)}
+  pre.ansi{margin:0; font-family:"SF Mono",ui-monospace,monospace; font-size:.72rem; line-height:1.4; color:var(--text); overflow-x:auto; white-space:pre}
+  pre.ansi .a{color:var(--accent)} pre.ansi .b{color:var(--accent2)} pre.ansi .c{color:var(--accent3)} pre.ansi .m{color:var(--faint)} pre.ansi .ok{color:var(--ok)}
+
+  .wide-panel{background:var(--bg2); border:1px solid var(--border); border-radius:var(--radius); padding:26px 28px}
+  .wide-panel pre.ansi{font-size:.86rem; line-height:1.5}
+  @media(max-width:900px){ .wide-panel pre.ansi{font-size:.66rem} }
+
+  .slide-banner{background:radial-gradient(ellipse 900px 500px at 15% 0%,color-mix(in srgb,var(--accent3) 16%,var(--bg)) 0%,var(--bg) 60%),var(--bg); border-top:none; border-bottom:1px solid var(--border); padding:46px 0 40px; overflow:hidden}
+  .slide-tag{display:inline-block; background:var(--bg3); border:1px solid var(--border); color:var(--muted); font-size:.76rem; letter-spacing:.1em; text-transform:uppercase; padding:6px 13px; border-radius:999px; margin-bottom:22px}
+  .slide-grid{display:grid; grid-template-columns:.85fr 1.15fr; gap:36px; align-items:center}
+  .slide-net{width:100%; height:auto; display:block}
+  .slide-net .chip{fill:var(--bg3); stroke:var(--accent3); stroke-width:2}
+  .slide-net .leg{stroke:var(--border); stroke-width:1.5}
+  .slide-net .link{stroke:var(--accent3); stroke-opacity:.35; stroke-width:1.2}
+  .slide-net .node{fill:var(--accent2)}
+  .slide-net .node.alt{fill:var(--accent)}
+  .slide-net .node.hub{fill:var(--accent3)}
+  .slide-title{font-size:clamp(1.5rem,3.4vw,2.2rem); line-height:1.15; letter-spacing:-.02em; margin:0 0 14px; text-wrap:balance}
+  .slide-sub{color:var(--muted); font-size:1.02rem; max-width:56ch; margin:0 0 22px}
+  .slide-flow{display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:22px; font-size:.86rem}
+  .slide-flow span.step{background:var(--bg3); border:1px solid var(--border); border-radius:8px; padding:7px 12px; color:var(--text)}
+  .slide-flow span.arrow{color:var(--faint)}
+  .slide-callout{background:var(--bg2); border:1px solid var(--border); border-left:3px solid var(--accent2); border-radius:10px; padding:16px 20px; color:var(--muted); font-size:.94rem}
+  .slide-callout b{color:var(--text)}
+  @media(max-width:900px){ .slide-grid{grid-template-columns:1fr} }
+
+  .tablewrap{overflow-x:auto; border:1px solid var(--border); border-radius:var(--radius)}
+  table{width:100%; border-collapse:collapse; font-size:.92rem; min-width:560px}
+  th,td{text-align:left; padding:12px 16px; border-bottom:1px solid var(--border)}
+  thead th{background:var(--bg3); color:var(--muted); font-weight:600; font-size:.78rem; letter-spacing:.05em; text-transform:uppercase}
+  tbody tr:last-child td{border-bottom:none}
+  tbody tr:hover{background:var(--bg3)}
+  td.name{font-weight:600}
+  td.num{text-align:right; font-variant-numeric:tabular-nums; color:var(--muted)}
+  .bar{position:relative; height:8px; background:var(--bg3); border-radius:999px; overflow:hidden; min-width:90px}
+  .bar>i{position:absolute; left:0; top:0; bottom:0; background:var(--grad); border-radius:999px}
+
+  .stack{display:grid; grid-template-columns:repeat(3,1fr); gap:12px}
+  .stack .item{background:var(--bg2); border:1px solid var(--border); border-radius:12px; padding:14px 16px}
+  .stack .item .k{color:var(--faint); font-size:.75rem; text-transform:uppercase; letter-spacing:.06em}
+  .stack .item .v{font-weight:600; margin-top:3px}
+
+  .road{display:flex; flex-wrap:wrap; gap:12px}
+  .spike{background:var(--bg2); border:1px solid var(--border); border-radius:12px; padding:14px 16px; flex:1 1 200px; min-width:190px}
+  .spike .st{font-size:.72rem; font-weight:700; letter-spacing:.06em}
+  .spike.done{border-color:color-mix(in srgb,var(--ok) 45%,var(--border))}
+  .spike.done .st{color:var(--ok)}
+  .spike.next .st{color:var(--next)}
+  .spike b{display:block; margin:6px 0 2px}
+  .spike span{color:var(--muted); font-size:.88rem}
+
+  .note{background:var(--bg2); border:1px solid var(--border); border-left:3px solid var(--accent); border-radius:12px; padding:18px 22px; color:var(--muted); font-size:.94rem}
+  .note b{color:var(--text)}
+  .note.warn{border-left-color:var(--danger)}
+
+  footer{border-top:1px solid var(--border); padding:40px 0; color:var(--muted); font-size:.9rem}
+  footer .wrap{display:flex; flex-wrap:wrap; gap:16px; align-items:center; justify-content:space-between}
+  footer a{color:var(--text)}
+
+  @media(max-width:900px){
+    .metrics{grid-template-columns:repeat(3,1fr)}
+    .g3{grid-template-columns:repeat(2,1fr)}
+    .feat{grid-template-columns:1fr}
+    .panel{position:static}
+    .stack{grid-template-columns:repeat(2,1fr)}
+  }
+  @media(max-width:620px){
+    nav.links{display:none}
+    nav.links.open{display:flex; position:absolute; top:60px; left:0; right:0; flex-direction:column; gap:0; background:var(--bg2); border-bottom:1px solid var(--border); padding:8px 22px; z-index:60}
+    nav.links.open a{padding:11px 0; border-bottom:1px solid var(--border)}
+    .menutoggle{display:inline-flex; margin-left:auto}
+    .metrics,.g3,.g2{grid-template-columns:1fr 1fr}
+    .stack{grid-template-columns:1fr}
+  }
+  @media (prefers-reduced-motion: reduce){ .card{transition:none} html{scroll-behavior:auto} }
+</style>
+</head>
+<body>
+
+<section class="slide-banner">
+  <div class="wrap">
+    <div class="slide-tag">Как на самом деле шла разработка</div>
+    <div class="slide-grid">
+      <svg class="slide-net" viewBox="0 0 380 260" role="img" aria-label="Схема: харнес разворачивает параллельных агентов по находкам ревью">
+        <rect class="chip" x="18" y="98" width="66" height="66" rx="10"/>
+        <line class="leg" x1="34" y1="98" x2="34" y2="86"/><line class="leg" x1="50" y1="98" x2="50" y2="86"/><line class="leg" x1="68" y1="98" x2="68" y2="86"/>
+        <line class="leg" x1="34" y1="164" x2="34" y2="176"/><line class="leg" x1="50" y1="164" x2="50" y2="176"/><line class="leg" x1="68" y1="164" x2="68" y2="176"/>
+        <g class="link">
+          <line x1="84" y1="112" x2="220" y2="34"/><line x1="84" y1="120" x2="250" y2="70"/><line x1="84" y1="131" x2="270" y2="118"/>
+          <line x1="84" y1="140" x2="260" y2="160"/><line x1="84" y1="150" x2="230" y2="200"/><line x1="84" y1="131" x2="340" y2="40"/>
+          <line x1="84" y1="131" x2="355" y2="131"/><line x1="84" y1="131" x2="330" y2="220"/><line x1="84" y1="120" x2="300" y2="95"/>
+          <line x1="84" y1="140" x2="300" y2="175"/>
+        </g>
+        <circle class="node hub" cx="220" cy="34" r="6"/><circle class="node" cx="250" cy="70" r="5"/>
+        <circle class="node alt" cx="270" cy="118" r="5.5"/><circle class="node" cx="260" cy="160" r="5"/>
+        <circle class="node hub" cx="230" cy="200" r="6"/><circle class="node alt" cx="340" cy="40" r="5"/>
+        <circle class="node" cx="355" cy="131" r="6.5"/><circle class="node" cx="330" cy="220" r="5"/>
+        <circle class="node alt" cx="300" cy="95" r="5"/><circle class="node" cx="300" cy="175" r="5"/>
+        <circle cx="51" cy="131" r="4" fill="var(--accent)"/>
+      </svg>
+      <div class="slide-copy">
+        <h2 class="slide-title">Харнес сам решает, <span class="grad">сколько агентов развернуть</span></h2>
+        <p class="slide-sub">Не заранее собранный пайплайн: аудит архитектуры запустил 58 агентов по фактическому числу подсистем, ревью финального стека PR — свои 29 по числу веток. Число исполнителей определяется задачей на лету, а не шаблоном.</p>
+        <div class="slide-flow">
+          <span class="step">Харнес-аудит</span><span class="arrow">→</span>
+          <span class="step">эпики и арки</span><span class="arrow">→</span>
+          <span class="step">параллельная реализация</span><span class="arrow">→</span>
+          <span class="step">адверсариальная проверка</span><span class="arrow">→</span>
+          <span class="step">фикс + ревери­фикация</span>
+        </div>
+        <div class="slide-callout"><b>Ниже — не иллюстрация процесса, а его честный отчёт.</b> Реальный цикл: 58-агентный аудит нашёл 44 подтверждённых дефекта → 6 эпиков → 96 арок → адверсариальное ревью стека из 18 PR нашло 1 critical и 4 high находки → все закрыты и перепроверены независимым агентом до мержа.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="#top">
+      <svg viewBox="0 0 32 32" fill="none"><polygon points="16,4 27,10 27,22 16,28 5,22 5,10" stroke="var(--accent)" stroke-width="2.2"/><circle cx="16" cy="16" r="4" fill="var(--accent2)"/></svg>
+      3x-ui panel
+    </a>
+    <button class="themebtn menutoggle" id="menuBtn" aria-label="Меню">☰</button>
+    <nav class="links" id="links">
+      <a href="#overview">Обзор</a>
+      <a href="#slide-ideas">Процесс</a>
+      <a href="#helicopter">Архитектура</a>
+      <a href="#contexts">Домены</a>
+      <a href="#spotlight">Ревью</a>
+      <a href="#crates">Крейты</a>
+      <a href="#stack">Стек</a>
+      <a href="#roadmap">Волна 6</a>
+      <button class="themebtn" id="themeBtn" aria-label="Тема">◐</button>
+      <a class="ghbtn" href="https://github.com/MHSanaei/3x-ui" target="_blank" rel="noopener">Оригинал (Go) ↗</a>
+    </nav>
+  </div>
+</header>
+
+<a id="top"></a>
+<section class="hero">
+  <div class="wrap">
+    <div class="eyebrow">3x-ui panel · Rust rewrite</div>
+    <h1 class="h1">Control-plane для Xray,<br><span class="grad">переписанный на Rust</span></h1>
+    <p class="lead">Панель управления <a href="https://github.com/XTLS/Xray-core" target="_blank" rel="noopener">Xray-core</a> — переезд с Go-монолита <a href="https://github.com/MHSanaei/3x-ui" target="_blank" rel="noopener">3x-ui</a> на гексагональную архитектуру DDD. Панель <b>оркеструет</b> data-plane по gRPC; сама трафик не передаёт — путь A. Домен (<code>xui-domain</code>) не имеет ни одной внешней зависимости и не знает, что такое async.</p>
+    <div class="chips">
+      <span class="chip"><b>5</b> крейтов</span>
+      <span class="chip"><b>21 141</b> строка Rust</span>
+      <span class="chip"><b>426</b> тестовых функций</span>
+      <span class="chip"><b>96</b> арок · <b>24</b> эпика</span>
+      <span class="chip">Код <b>закрыт</b> · инженерия — открыто</span>
+    </div>
+    <div class="cta">
+      <a class="btn primary" href="#helicopter">Как устроено →</a>
+      <a class="btn ghost" href="#spotlight">Как проверяли →</a>
+      <a class="btn ghost" href="https://github.com/MHSanaei/3x-ui" target="_blank" rel="noopener">Оригинальный 3x-ui (Go) →</a>
+    </div>
+  </div>
+</section>
+
+<section id="slide-ideas">
+  <div class="wrap">
+    <div class="eyebrow">Процесс → результат</div>
+    <h2>Три вещи, которые харнес сделал сам, а не по шаблону</h2>
+    <p class="sub">Разработка велась не «арка за аркой вручную», а харнесом: multi-agent workflow сам решал состав и число исполнителей под конкретную находку.</p>
+    <div class="grid g3">
+      <div class="card">
+        <div class="ic">🔎</div>
+        <h3>Число агентов — по факту, не по шаблону</h3>
+        <p>Харнес-аудит архитектуры не запускал фиксированную десятку проверяющих — он развернул 8 индексеров Vendor-референсов и 5 DDD-аудиторов параллельно, по числу реальных подсистем.</p>
+        <p class="loc">58 агентов · 44 подтверждённых дефекта после адверсариальной верификации</p>
+      </div>
+      <div class="card">
+        <div class="ic">⚔️</div>
+        <h3>Каждая находка проходит через опровержение</h3>
+        <p>Ни одна находка ревью не попадает в отчёт без второго агента, который пытается её опровергнуть чтением реального кода — не «похоже на баг», а подтверждённый факт.</p>
+        <p class="loc">Стек из 18 PR: 1 critical + 4 high подтверждены, все закрыты и перепроверены до мержа</p>
+      </div>
+      <div class="card">
+        <div class="ic">🔒</div>
+        <h3>Изоляция параллельных попыток</h3>
+        <p>Когда несколько агентов одновременно правят код в одной рабочей директории, их <code>git checkout</code> сталкиваются. Урок закреплён как правило проекта.</p>
+        <p class="loc">Инцидент зафиксирован честно, не скрыт — реальная запись в <code>BLOCKED.md</code>, не приукрашенная</p>
+      </div>
+    </div>
+    <div style="height:40px"></div>
+    <div class="eyebrow">Один реальный цикл</div>
+    <h2>От аудита до зелёного мержа: полный проход</h2>
+    <p class="sub">Задача «проверить архитектуру и довести стек PR до состояния, готового к ревью человеком» была сформулирована один раз. Граф стадий и точки ветвления по находкам — не собраны заранее вручную.</p>
+    <div class="wide-panel">
+      <pre class="ansi">Задача целиком: <span class="m">"проведи харнес-аудит архитектуры, заведи эпики,</span>
+реализуй, отревьюй стек PR, закрой находки" — сформулирована один раз.
+
+┌────────────────────────────────────────────────────────────────────────────────┐
+│ <span class="a">Harness-аудит — 8 индексеров Vendor + 5 DDD-аудиторов + верификация</span>          │
+│       │  44 подтверждённых дефекта → 6 новых эпиков (Э-25…Э-30)                │
+│       ▼                                                                        │
+│ Реализация арок — по агенту на эпик, изолированные git worktree                │
+│       │  96 арок, каждая — свой зелёный гейт (cargo test + clippy -D warnings) │
+│       ▼                                                                        │
+│ <span class="a">Ревью стека — 18 открытых PR, 9 логических веток</span>                             │
+│   ┌───────────────┬───────────────┬───────────────┬───────────────┐            │
+│   │ <span class="m">correctness</span>   │ <span class="m">security-фокус</span>│ <span class="m">correctness</span>   │ <span class="m">…ещё 6 веток</span> │            │
+│   └───────────────┴───────────────┴───────────────┴───────────────┘            │
+│       │  21 кандидат-находка → адверсариальная верификация каждой              │
+│       ▼  1 critical + 4 high подтверждены чтением реального кода               │
+│ Фикс — по агенту на блокирующую ветку, изолированные worktree                  │
+│       │  3 фикса, каждый с тестом на конкретный сценарий отказа                │
+│       ▼                                                                        │
+│ <span class="b">Независимая реверификация — не тот же агент, что чинил</span>                       │
+└────────────────────────────────────────────────────────────────────────────────┘
+
+<span class="b">итого: харнес-аудит + фиксы — свыше 100 агентов</span>, ни одной ручной
+строчки оркестрации — граф выше написан и исполнен инструментом
+Workflow по этому текстовому описанию задачи</pre>
+    </div>
+  </div>
+</section>
+
+<section id="overview">
+  <div class="wrap">
+    <div class="eyebrow">Обзор</div>
+    <h2>Масштаб проекта</h2>
+    <p class="sub">Цифры выверены по рабочему дереву репозитория на момент публикации, не выдуманы.</p>
+    <div class="metrics">
+      <div class="metric"><div class="num">21 141</div><div class="lbl">строк Rust</div></div>
+      <div class="metric"><div class="num">5</div><div class="lbl">крейтов гексагона</div></div>
+      <div class="metric"><div class="num">426</div><div class="lbl">тестовых функций</div></div>
+      <div class="metric"><div class="num">96</div><div class="lbl">арок в 24 эпиках</div></div>
+      <div class="metric"><div class="num">32</div><div class="lbl">внешних зависимости</div></div>
+      <div class="metric"><div class="num">0</div><div class="lbl">внешних deps в домене</div></div>
+    </div>
+  </div>
+</section>
+
+<section id="helicopter">
+  <div class="wrap">
+    <div class="eyebrow">Helicopter View</div>
+    <h2>Гексагон с высоты птичьего полёта</h2>
+    <p class="sub">Правило зависимостей: только внутрь, к чистому домену. Xray-core — отдельный процесс за gRPC ACL, формат его JSON-конфига не протекает глубже адаптера.</p>
+    <div class="wide-panel">
+      <pre class="ansi"><span class="m">Xray-core — отдельный процесс, data-plane, за gRPC (tonic)</span>
+        │
+        ▼  <span class="m">HandlerService · StatsService — единственный контракт</span>
+┌────────────────────────────────────────────────────────────────────────────┐
+│ <span class="b">xui-infra</span> (4 429 LOC) — адаптеры: sqlx · tonic · teloxide · scheduler        │
+│ <span class="b">xui-api</span>   (7 111 LOC) — axum: REST/WS, сессии, CSRF, 2FA, rate-limit         │
+└────────────────────────────────────────────────────────────────────────────┘
+        │           │
+        ▼           ▼
+┌────────────────────────────────────────────────────────────────────────────┐
+│ <span class="c">xui-app</span> (4 115 LOC) — use cases + порты (traits), ни строчки I/O               │
+└────────────────────────────────────────────────────────────────────────────┘
+        │
+        ▼
+┌────────────────────────────────────────────────────────────────────────────┐
+│ <span class="a">xui-domain</span> (5 252 LOC) — ЯДРО: sync, без I/O, <span class="ok">0 внешних зависимостей</span>            │
+│                                                                            │
+│   access · credentials · protocol · xray · traffic · subscription          │
+│   settings · admin · node · federation · events                            │
+└────────────────────────────────────────────────────────────────────────────┘
+        │
+        ▼
+<span class="a">xui-bin</span> — composition root: собирает адаптеры, инжектит порты, стартует панель</pre>
+    </div>
+  </div>
+</section>
+
+<section id="contexts">
+  <div class="wrap">
+    <div class="eyebrow">Domain-Driven Design</div>
+    <h2>Bounded contexts</h2>
+    <p class="sub">Домен разбит по смыслу, не по техническому слою: каждый файл в <code>xui-domain</code> — своя ответственность, инварианты покрыты тестами, часть — property-тестами.</p>
+    <div class="grid g3">
+      <div class="card">
+        <div class="ic">🧱</div>
+        <h3>Access</h3>
+        <p>Inbound и Client как самостоятельные агрегаты после нормализации: клиент больше не вложен в inbound, связь — через ассоциацию.</p>
+        <ul><li>VO: <code>Tag</code>, <code>Port</code>, <code>Quota</code>, <code>ExpiryTime</code></li><li>Инварианты: сброс трафика, IP-лимит, protocol↔security</li></ul>
+        <p class="loc">access.rs · credentials.rs · protocol.rs</p>
+      </div>
+      <div class="card">
+        <div class="ic">📡</div>
+        <h3>Xray ACL <span class="tag">CORE</span></h3>
+        <p>Семантический diff конфигурации → план применения: NoOp / Hot (gRPC без рестарта) / Restart. Формат Xray JSON не протекает выше адаптера.</p>
+        <ul><li><code>HotDiffCalculator</code> — 7 правил H1–H7</li><li>Proptest: идентичные конфиги → всегда NoOp</li></ul>
+        <p class="loc">xray.rs · gRPC HandlerService/StatsService</p>
+      </div>
+      <div class="card">
+        <div class="ic">🌐</div>
+        <h3>Subscription &amp; Federation</h3>
+        <p>Генерация ссылок для клиентских приложений (VLESS/VMess/Trojan/Shadowsocks/WireGuard) и обмен клиентами между узлами панели.</p>
+        <ul><li>Заголовки Subscription-Userinfo</li><li>SS-2022 валидация, REALITY VO</li></ul>
+        <p class="loc">subscription.rs · federation.rs</p>
+      </div>
+      <div class="card">
+        <div class="ic">🛡️</div>
+        <h3>Security &amp; Settings</h3>
+        <p>2FA как state-enum (не перезаписывается без кода), CSRF constant-time, TrustMode вместо голого списка доверенных прокси.</p>
+        <ul><li><code>TrustMode</code> — явный VO, не эвристика</li><li>Audit-log с типизированными действиями</li></ul>
+        <p class="loc">settings.rs · admin.rs · events.rs</p>
+      </div>
+      <div class="card">
+        <div class="ic">📊</div>
+        <h3>Traffic &amp; Nodes</h3>
+        <p>Сбор трафика тиком планировщика, online-детект до сброса счётчиков (не после — иначе IP-лимит не срабатывает), federation-ноды.</p>
+        <ul><li>Порядок online/reset в тике — критичен</li><li>Батч-RPC вместо ручного парсинга имён</li></ul>
+        <p class="loc">traffic.rs · node.rs</p>
+      </div>
+      <div class="card">
+        <div class="ic">🧠</div>
+        <h3>Второй мозг проекта</h3>
+        <p>Реестр эпиков и блокеров — плоские, append-only документы, метод ведения заметок Андрея Карпати: честный лог, не глянец.</p>
+        <ul><li><code>epics.md</code> — что сделано, статус каждой арки</li><li><code>BLOCKED.md</code> — реальные инциденты, не только успехи</li></ul>
+        <p class="loc">docs/RnD/ · grep вместо графа ссылок</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="spotlight">
+  <div class="wrap">
+    <div class="eyebrow">Адверсариальное ревью · до мержа</div>
+    <h2>Стек из 18 PR проверен параллельно — и это нашло реальные баги</h2>
+    <p class="sub">Прежде чем что-либо мержить, весь накопленный стек прошёл через ревью: по два угла проверки на каждую из 9 логических веток, затем независимая верификация каждой находки severity critical/high/medium вторым агентом, который пытался её опровергнуть.</p>
+    <div class="feat">
+      <div class="list">
+        <div class="row"><div class="dot"></div><div><b>Найдено до продакшена: обход IP-whitelist</b><span>Парсинг X-Forwarded-For брал не тот адрес цепочки — атакующий мог подделать источник запроса даже при настроенных доверенных прокси. Исправлено, покрыто тестом на конкретный сценарий атаки.</span></div></div>
+        <div class="row"><div class="dot"></div><div><b>Найдено: утечка данных на горячем пути</b><span>Публичная ссылка подписки не проходила через уже написанную миграцию приватности — легаси-клиенты оставались уязвимы именно там, где это важнее всего.</span></div></div>
+        <div class="row"><div class="dot"></div><div><b>Найдено: дыра в сериализации TLS/REALITY-конфига</b><span>Первый же защищённый inbound физически не запустился бы — конфигурация писалась на диск без обязательных секций. Поймано до того, как дошло до пользователей.</span></div></div>
+        <div class="row"><div class="dot"></div><div><b>Каждый фикс — с тестом на сценарий отказа</b><span>Не «стало лучше», а конкретный тест, воспроизводящий атаку/баг и проверяющий, что он больше не проходит.</span></div></div>
+        <div class="row"><div class="dot"></div><div><b>Верификатор — не тот, кто чинил</b><span>Независимый агент перечитывает код заново и либо подтверждает исправление, либо возвращает находку — так поймано и расхождение из-за гонки веток.</span></div></div>
+      </div>
+      <div class="panel">
+        <h4>pr-stack-review · вердикт</h4>
+        <pre class="ansi"><span class="m">9 логических веток · 18 открытых PR</span>
+
+  <span class="a">21</span> находок-кандидатов
+  <span class="a">10</span> прошли верификацию (critical/high/medium)
+  <span class="b">1</span> critical, <span class="b">4</span> high — блокеры мержа
+
+  $ фикс → гейт → коммит → push
+  arc/…-real-state    <span class="ok">fixed + verified</span>
+  epic/…-data          <span class="ok">fixed + verified</span>
+  epic/…-security       <span class="ok">fixed + verified</span>
+
+  4 ветки из 9 — <span class="ok">чисты изначально</span>
+  0 находок скрыто или проигнорировано</pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="crates">
+  <div class="wrap">
+    <div class="eyebrow">Крейты</div>
+    <h2>Строки кода по слоям гексагона</h2>
+    <p class="sub">5 крейтов Cargo-workspace. Зависимости — только внутрь, к <code>xui-domain</code>.</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Крейт</th><th>Роль</th><th class="num">Файлы</th><th class="num">Строки</th><th>Доля</th></tr></thead>
+        <tbody>
+          <tr><td class="name">xui-api</td><td>axum: REST/WS, сессии, CSRF, 2FA, rate-limit</td><td class="num">17</td><td class="num">7 111</td><td><div class="bar"><i style="width:100%"></i></div></td></tr>
+          <tr><td class="name">xui-domain</td><td>Ядро: VO, инварианты, HotDiff — без I/O</td><td class="num">12</td><td class="num">5 252</td><td><div class="bar"><i style="width:73.9%"></i></div></td></tr>
+          <tr><td class="name">xui-infra</td><td>Адаптеры: sqlx, tonic, teloxide, планировщик</td><td class="num">16</td><td class="num">4 429</td><td><div class="bar"><i style="width:62.3%"></i></div></td></tr>
+          <tr><td class="name">xui-app</td><td>Use cases + порты (traits), ни строчки I/O</td><td class="num">4</td><td class="num">4 115</td><td><div class="bar"><i style="width:57.9%"></i></div></td></tr>
+          <tr><td class="name">xui-bin</td><td>Composition root — собирает адаптеры</td><td class="num">1</td><td class="num">234</td><td><div class="bar"><i style="width:3.3%"></i></div></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section id="stack">
+  <div class="wrap">
+    <div class="eyebrow">Технологии</div>
+    <h2>Стек</h2>
+    <p class="sub">Домен — ноль внешних зависимостей. Всё остальное добавляется отдельным явным шагом, не «на всякий случай».</p>
+    <div class="stack">
+      <div class="item"><div class="k">Web</div><div class="v">axum · tower-sessions</div></div>
+      <div class="item"><div class="k">Data-plane RPC</div><div class="v">tonic (gRPC к Xray-core)</div></div>
+      <div class="item"><div class="k">Хранилище</div><div class="v">sqlx (SQLite), транзакции</div></div>
+      <div class="item"><div class="k">Пароли/2FA</div><div class="v">argon2 · TOTP</div></div>
+      <div class="item"><div class="k">Constant-time</div><div class="v">subtle (CSRF/токены)</div></div>
+      <div class="item"><div class="k">Крипто-ключи</div><div class="v">x25519-dalek (WG/REALITY)</div></div>
+      <div class="item"><div class="k">Telegram-бот</div><div class="v">teloxide</div></div>
+      <div class="item"><div class="k">Сериализация</div><div class="v">serde · serde_json · toml</div></div>
+      <div class="item"><div class="k">Property-тесты</div><div class="v">proptest — инварианты HotDiff</div></div>
+    </div>
+  </div>
+</section>
+
+<section id="roadmap">
+  <div class="wrap">
+    <div class="eyebrow">Прогресс</div>
+    <h2>Волна 6 — харнес-аудит и что из него вышло</h2>
+    <p class="sub">Все арки — зелёные тесты, чистый clippy, ни одного <code>unwrap()</code> в проде. Кандидаты на исправление не придумывались — только подтверждённые находки харнес-аудита и последующего ревью стека.</p>
+    <div class="road">
+      <div class="spike done"><div class="st">✓ ГОТОВО</div><b>Xray ACL — честный hot-apply</b><span>Сериализация inbound в валидный JSON, policy-секция, порядок online/reset в тике планировщика.</span></div>
+      <div class="spike done"><div class="st">✓ ГОТОВО</div><b>Security Hardening III</b><span>TrustMode вместо голого списка прокси, CSRF без legacy-дыры, 2FA setup guard, audit неудачных логинов.</span></div>
+      <div class="spike done"><div class="st">✓ ГОТОВО</div><b>Разрыв ребра api→infra</b><span>Порты вместо прямых вызовов инфраструктуры из HTTP-хендлеров — гексагон восстановлен.</span></div>
+      <div class="spike done"><div class="st">✓ ГОТОВО</div><b>Ошибки — значения повсюду</b><span>Единый ApiError без утечки внутренних деталей, типизированные ошибки портов вместо строк.</span></div>
+      <div class="spike done"><div class="st">✓ ГОТОВО</div><b>Ревью стека + фиксы</b><span>18 PR, 1 critical + 4 high найдено и закрыто, независимая реверификация каждого фикса.</span></div>
+      <div class="spike next"><div class="st">→ СЛЕДУЮЩЕЕ</div><b>Ревью человеком</b><span>Ничего не смёржено автономно — стек ждёт финального решения человека-ревьюера.</span></div>
+    </div>
+    <div style="height:26px"></div>
+    <div class="note warn"><b>Закрытый код, открытая инженерия.</b> Сам репозиторий — приватный (проприетарная панель), поэтому здесь нет ссылки «смотреть исходники». Но процесс, которым он строится — харнес-аудит, параллельные арки, адверсариальное ревью до мержа — описан здесь честно, включая найденные и закрытые security-находки, без деталей эксплуатации.</div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div>
+      <strong>3x-ui panel</strong> — Rust rewrite, control-plane для Xray-core · закрытый код<br>
+      Идейный источник: <a href="https://github.com/MHSanaei/3x-ui" target="_blank" rel="noopener">MHSanaei/3x-ui</a> (Go, AGPL-3.0) · data-plane: <a href="https://github.com/XTLS/Xray-core" target="_blank" rel="noopener">XTLS/Xray-core</a> · обновлено: июль 2026
+    </div>
+    <div>
+      <a href="https://github.com/MHSanaei/3x-ui" target="_blank" rel="noopener">Оригинал (Go) ↗</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+  const root=document.documentElement, tBtn=document.getElementById('themeBtn');
+  const saved=localStorage.getItem('3xui-theme'); if(saved) root.setAttribute('data-theme',saved);
+  tBtn.addEventListener('click',()=>{
+    const next=root.getAttribute('data-theme')==='dark'?'light':'dark';
+    root.setAttribute('data-theme',next); localStorage.setItem('3xui-theme',next);
+  });
+  const menuBtn=document.getElementById('menuBtn'), links=document.getElementById('links');
+  menuBtn.addEventListener('click',()=>links.classList.toggle('open'));
+  links.addEventListener('click',e=>{ if(e.target.tagName==='A') links.classList.remove('open'); });
+  const secs=[...document.querySelectorAll('section[id]')];
+  const navA=[...document.querySelectorAll('nav.links a[href^="#"]')];
+  const io=new IntersectionObserver(es=>{
+    es.forEach(en=>{ if(en.isIntersecting){
+      navA.forEach(a=>a.classList.toggle('active',a.getAttribute('href')==='#'+en.target.id));
+    }});
+  },{rootMargin:'-45% 0px -50% 0px'});
+  secs.forEach(s=>io.observe(s));
+</script>
+</body>
+</html>
