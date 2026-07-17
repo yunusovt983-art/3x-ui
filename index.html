@@ -102,7 +102,9 @@
   .slide-banner{background:radial-gradient(ellipse 900px 500px at 15% 0%,color-mix(in srgb,var(--accent3) 16%,var(--bg)) 0%,var(--bg) 60%),var(--bg); border-top:none; border-bottom:1px solid var(--border); padding:46px 0 40px; overflow:hidden}
   .slide-tag{display:inline-block; background:var(--bg3); border:1px solid var(--border); color:var(--muted); font-size:.76rem; letter-spacing:.1em; text-transform:uppercase; padding:6px 13px; border-radius:999px; margin-bottom:22px}
   .slide-grid{display:grid; grid-template-columns:.85fr 1.15fr; gap:36px; align-items:center}
-  .slide-net{width:100%; height:auto; display:block}
+  .slide-grid>*{min-width:0}
+  .slide-net{width:100%; height:auto; display:block; min-width:0}
+  body{overflow-x:hidden}
   .slide-net .chip{fill:var(--bg3); stroke:var(--accent3); stroke-width:2}
   .slide-net .leg{stroke:var(--border); stroke-width:1.5}
   .slide-net .link{stroke:var(--accent3); stroke-opacity:.35; stroke-width:1.2}
