@@ -221,14 +221,16 @@
     <h1>3x-ui-panel <span class="dim">— Rust · DDD</span></h1>
     <p class="subtitle">Переписанная на Rust панель управления Xray. Панель <b>оркеструет</b>
       data-plane (Xray-core за gRPC), но сама трафик не передаёт — «путь A».
-      Гексагональная архитектура: зависимости направлены строго внутрь, к чистому домену. Рядом с кодом растёт второй мозг — Zettelkasten-вики с картами тем и атомарными заметками.</p>
+      Гексагон × ограниченные контексты: зависимости направлены строго внутрь, к чистому домену, а код
+      каждого слоя разложен по одним и тем же бизнес-контекстам. Рядом с кодом растёт второй мозг —
+      Zettelkasten-вики с картами тем и атомарными заметками.</p>
     <div class="chips">
       <span class="chip hot">путь A · orchestration-only</span>
-      <span class="chip">5 крейтов + web-UI</span>
-      <span class="chip">гексагон / ports &amp; adapters</span>
+      <span class="chip">9 крейтов + web-UI</span>
+      <span class="chip">гексагон × контексты</span>
       <span class="chip">Xray за gRPC (tonic)</span>
       <span class="chip">домен: 0 внешних зависимостей</span>
-      <span class="chip">11 протоколов · 6 транспортов</span>
+      <span class="chip">11 протоколов · 7 транспортов</span>
       <span class="chip">SQLite · axum · React 19 · teloxide</span>
     </div>
   </div>
@@ -238,17 +240,18 @@
 <section style="border-top:0;padding-top:0">
   <div class="wrap">
     <div class="stats">
-      <div class="stat"><div class="v">44 595</div><div class="k">строк Rust</div></div>
-      <div class="stat"><div class="v">915</div><div class="k">cargo-тестов</div></div>
-      <div class="stat"><div class="v">25</div><div class="k">портов-трейтов</div></div>
-      <div class="stat"><div class="v">55</div><div class="k">HTTP-маршрутов</div></div>
-      <div class="stat"><div class="v">21</div><div class="k">zettel-заметка</div></div>
-      <div class="stat"><div class="v">55+</div><div class="k">эпиков закрыто</div></div>
+      <div class="stat"><div class="v">105 841</div><div class="k">строк Rust</div></div>
+      <div class="stat"><div class="v">≈1 900</div><div class="k">cargo-тестов</div></div>
+      <div class="stat"><div class="v">138</div><div class="k">vitest-тестов</div></div>
+      <div class="stat"><div class="v">74</div><div class="k">HTTP-операции</div></div>
+      <div class="stat"><div class="v">43</div><div class="k">миграции SQLite</div></div>
+      <div class="stat"><div class="v">98</div><div class="k">эпиков в реестре</div></div>
     </div>
-    <p class="lead" style="margin:0">Гейт каждой арки: <span class="mono">cargo test --workspace</span> ·
-      <span class="mono">cargo fmt --check</span> · <span class="mono">cargo clippy -D warnings</span> ·
-      <span class="mono">RUSTFLAGS="-D warnings" cargo build --release</span> · <span class="mono">npm run build/test</span>
-      (17 vitest-тестов). Красный гейт — не коммитим.</p>
+    <p class="lead" style="margin:0">Гейт каждой арки — один скрипт <span class="mono">scripts/gate.sh --full</span>:
+      <span class="mono">cargo fmt --check</span> · сборка, линт и тесты веба · сверка типов API с OpenAPI ·
+      <span class="mono">cargo clippy -D warnings</span> · <span class="mono">cargo test</span> ·
+      <span class="mono">RUSTFLAGS="-D warnings" cargo build --release</span> · Go-sidecar · AST-индекс.
+      Его же запускает CI. Красный гейт — не коммитим.</p>
   </div>
 </section>
 
@@ -337,202 +340,224 @@
       <span class="eyebrow">HLD · псевдографика 72 кол.</span>
     </div>
     <p class="lead">Тот же HLD в формате, который живёт в репозитории: моноширинные рамки на 72 колонки,
-      как в статьях <span class="mono">Wiki_3x/Фейнман</span>. Пять уровней — контекст, слои, модули,
-      поток применения конфигурации, периметр запроса — плюс матрица провизии протоколов.
-      Блоки копируются в комментарии и доки без потерь.</p>
+      как в статьях <span class="mono">Wiki_3x/Фейнман</span>. Семь уровней — контекст, крейты, карта
+      контекстов, поток применения конфигурации, периметр запроса, матрица провизии протоколов и
+      жизненный цикл процесса. Блоки копируются в комментарии и доки без потерь.</p>
 
     <div class="ansi-stack">
 
       <div>
         <div class="ansi"><pre>┌─ <span class="k-hd">L0 · СИСТЕМНЫЙ КОНТЕКСТ</span> ────────────────────────────────────────────┐
 │                                                                      │
-│   Браузер (React 19)      Telegram-бот       Федеративная нода       │
-│         │ HTTPS                │ Bot API           │ X-Fed-Token     │
-│         v                      v                   v                 │
-│  ┌────────────────────────────────────────────────────────────┐      │
-│  │  3x-ui-panel — control-plane, один процесс на Rust         │      │
-│  │  axum REST/WS · сессия+CSRF+2FA · подписки · планировщик   │      │
-│  └────────────────────────────────────────────────────────────┘      │
-│         │ sqlx                 │ gRPC :10085       │ ACME HTTP-01    │
-│         v                      v                   v                 │
-│      SQLite                Xray-core           Let&#x27;s Encrypt         │
-│      админы · inbounds     data-plane          TLS-сертификаты       │
-│      clients · settings    (отдельный процесс)                       │
+│   Браузер (React 19)   API-клиенты    Telegram     Ноды · peer       │
+│        │ HTTPS           │ Bearer        │ Bot API     │ REST + pin  │
+│        v                 v               v             v             │
+│  ┌────────────────────────────────────────────────────────────────┐  │
+│  │  3x-ui-panel — control-plane, один бинарь `xui` на Rust        │  │
+│  │  axum REST/SSE · сессии+CSRF+2FA · токены · подписки · тик     │  │
+│  └────────────────────────────────────────────────────────────────┘  │
+│     │ sqlx       │ процесс + gRPC    │ процессы      │ HTTPS         │
+│     v            v                   v               v               │
+│  SQLite       Xray-core           sidecar-ы       ACME · IPN оплаты  │
+│  43 миграции  data-plane          xui-awg         релизы Xray        │
+│  30 таблиц    (дочерний процесс)  mtg-multi       (SHA-256)          │
 │                                                                      │
 ├──────────────────────────────────────────────────────────────────────┤
 │  Путь A: пользовательский трафик идёт ЧЕРЕЗ Xray, не через панель.   │
-│  Панель только считает план и отдаёт его data-plane по gRPC.         │
+│  Панель считает план и отдаёт его data-plane по gRPC :10085.         │
 └──────────────────────────────────────────────────────────────────────┘</pre></div>
-        <p class="ansi-note">Панель — единственный control-plane: состояние в SQLite, конфигурация уходит
-          в отдельный процесс Xray, сертификаты берутся по ACME, клиенты обмениваются с федеративными нодами.</p>
+        <p class="ansi-note">Панель — единственный control-plane: состояние в SQLite, Xray и sidecar-процессы она запускает сама, сертификаты берёт по ACME, с нодами и peer-панелями говорит по REST.</p>
       </div>
-
       <div>
-        <div class="ansi"><pre>┌─ <span class="k-hd">L1 · СЛОИ ГЕКСАГОНА · ПРАВИЛО ЗАВИСИМОСТЕЙ</span> ─────────────────────────┐
+        <div class="ansi"><pre>┌─ <span class="k-hd">L1 · ДЕВЯТЬ КРЕЙТОВ · ПРАВИЛО ЗАВИСИМОСТЕЙ</span> ─────────────────────────┐
 │                                                                      │
-│  ┌──────────────────────────────────────────────┐                    │
-│  │ <span class="k-bin">xui-bin</span>           composition root · 434 стр │  DI, fail-fast     │
-│  └───────────────────────┬──────────────────────┘                    │
-│         ┌────────────────┴────────────────┐                          │
-│         v                                 v                          │
-│  ┌──────────────────────┐   ┌──────────────────────────┐             │
-│  │ <span class="k-api">xui-api</span>      13 510  │   │ <span class="k-inf">xui-infra</span>        13 948  │             │
-│  │ axum · REST/WS/SSE   │   │ sqlx · tonic · tokio     │             │
-│  │ сессии · CSRF · 2FA  │   │ process · scheduler      │             │
-│  └──────────┬───────────┘   └───────────┬──────────────┘             │
-│             └───────────┬───────────────┘                            │
+│  ┌──────────────────────────────────────────────────────────────┐    │
+│  │ <span class="k-bin">xui-bin</span>   composition root · бинари xui и xui-peer-sync      │    │
+│  └───────────┬──────────────────────────────────┬───────────────┘    │
+│              v                                  v                    │
+│  ┌──────────────────────┐   ┌───────────────────────────────────┐    │
+│  │ <span class="k-api">xui-api</span>       24,2 т │   │ <span class="k-inf">xui-infra</span>  фасад + интеграции 11,5│    │
+│  │ axum · REST · SSE    │   │ Telegram · оплата · ACME · sidecar│    │
+│  │ сессии · CSRF · 2FA  │   └───┬─────────────┬─────────────┬───┘    │
+│  └──────────┬───────────┘       v             v             v        │
+│             │            <span class="k-inf">-xray</span>  11,1   <span class="k-inf">-sqlite</span> 11,4  <span class="k-inf">-federation</span>     │
+│             │            ACL Xray      хранилище     ноды · peer 2,8 │
+│             │                 └────────────┬──────────────┘          │
+│             │                              v                         │
+│             │                  <span class="k-inf">xui-infra-kernel</span>   2,4                │
+│             │                  процессы · файлы 0600 · X25519        │
+│             └───────────┬──────────────────┘                         │
 │                         v                                            │
 │             ┌───────────────────────────┐                            │
-│             │ <span class="k-app">xui-app</span>            6 045  │  25 портов-трейтов         │
-│             │ use cases + порты (trait) │  Clock, репозитории,       │
-│             └────────────┬──────────────┘  XrayController,           │
-│                          v                 Notifier, AuditLog        │
+│             │ <span class="k-app">xui-app</span>            15,9 т │  сценарии + порты          │
+│             │ 9 контекстов · async-trait│  без tokio · sqlx · axum   │
+│             └────────────┬──────────────┘                            │
+│                          v                                           │
 │             ┌───────────────────────────┐                            │
-│             │ <span class="k-dom">xui-domain</span>        10 658  │  sync · без I/O            │
-│             │ ЯДРО: инварианты и VO     │  0 внешних зависимостей    │
+│             │ <span class="k-dom">xui-domain</span>         23,5 т │  sync · без I/O            │
+│             │ 8 контекстов · 43 модуля  │  0 внешних зависимостей    │
 │             └───────────────────────────┘                            │
 │                                                                      │
 ├──────────────────────────────────────────────────────────────────────┤
-│  Стрелка = «зависит от». Обратных рёбер нет: инфраструктура знает    │
-│  о портах, порты не знают об инфраструктуре. В <span class="k-dom">xui-domain</span> запрещены  │
-│  tokio · sqlx · tonic · serde — и любая запись в Cargo.toml.         │
+│  Стрелка = «зависит от». Листовые адаптеры (-xray · -sqlite ·        │
+│  -federation) друг друга не видят; <span class="k-api">xui-api</span> не видит инфраструктуру.  │
+│  Граф и раскладку каталогов охраняет tests/architecture.rs.          │
 └──────────────────────────────────────────────────────────────────────┘</pre></div>
-        <p class="ansi-note">Ребро <span class="mono">xui-api → xui-infra</span> было разорвано в Э-27:
-          API общается с инфраструктурой только через порты <span class="mono">xui-app</span>.</p>
+        <p class="ansi-note">Один <span class="mono">xui-infra</span> на 36 тыс. строк разделён в Э-98 на ядро, три листовых адаптера и фасад: правка Telegram больше не пересобирает SQLite и Xray.</p>
       </div>
-
       <div>
-        <div class="ansi"><pre>┌─ <span class="k-hd">L2 · КАРТА МОДУЛЕЙ</span> ─────────────────────────────────────────────────┐
+        <div class="ansi"><pre>┌─ <span class="k-hd">L2 · КАРТА КОНТЕКСТОВ</span> ──────────────────────────────────────────────┐
 │                                                                      │
-│  <span class="k-dom">xui-domain</span>/   access · protocol · credentials · reality ·           │
-│                shadowsocks · xray (ApplyPlan/HotDiff) · traffic ·    │
-│                subscription · settings · admin · node ·              │
-│                federation · events                                   │
+│  контекст       <span class="k-dom">domain</span>          <span class="k-app">app</span>               <span class="k-inf">infra</span> / <span class="k-api">api</span>        │
+│  ─────────────────────────────────────────────────────────────────   │
+│  access         Client·Inbound  CRUD · bulk ·     persistence/access │
+│                 VO · группы     группы            routes/access      │
+│  protocols      Protocol ·      —                 handler_config ·   │
+│                 Credentials                       inbound_rules      │
+│  traffic        Quota · Policy  сбор · истечение  persistence/traffic│
+│                 MetricRing      сбросы · онлайн   routes/platform    │
+│  xray / engine  HotDiff ·       ApplyConfig ·     <span class="k-inf">-infra-xray</span>        │
+│                 ApplyPlan       XrayRuntime       routes/platform    │
+│  subscription   профиль ·       импорт внешней    routes/subscription│
+│                 5 рендеров      подписки                             │
+│  fleet          Node · sync ·   здоровье · push   <span class="k-inf">-infra-federation</span>  │
+│                 SSRF-политика   peer-копия        routes/fleet       │
+│  sales          автоматы        activation ·      платёжный IPN      │
+│                 статусов        delivery          routes/sales       │
+│  messaging      DomainEvent     Notifier · бот    Telegram · EventBus│
+│  platform       settings ·      Maintenance ·     ACME · TOTP · бэкап│
+│                 admin · токены  токены · плагины  routes/platform    │
+│  kernel         —               Clock · Events    <span class="k-inf">-infra-kernel</span>      │
 │                                                                      │
-│  <span class="k-app">xui-app</span>/      ports.rs  — 25 трейтов-портов                         │
-│                usecases/ — inbound · client · traffic · node ·       │
-│                            federation · scheduler · bootstrap · bot  │
-│                plugins.rs                                            │
+│  web/           React 19 + Router 7 + TS 6 + Vite 8 + Tailwind 4     │
+│                 13 экранов · типы из OpenAPI · SSE · 138 vitest      │
 │                                                                      │
-│  <span class="k-inf">xui-infra</span>/    persistence/     admin · client · inbound · node ·    │
-│                                 settings · audit_log · metric ·      │
-│                                 ip_tracker · scheduler_state         │
-│                xray_grpc · xray_adapter · xray_render · xray         │
-│                handler_config/  dispatcher · protocols · accounts ·  │
-│                                 stream  (protobuf AlterInbound)      │
-│                scheduler · session_store · totp · password · acme ·  │
-│                backup · federation · telegram · notify · mtproto     │
-│                                                                      │
-│  <span class="k-api">xui-api</span>/      routes/   inbounds · clients · groups · bulk ·        │
-│                          subscription · settings · metrics · audit · │
-│                          reality · misc            (55 маршрутов)    │
-│                auth · session · csrf · twofa · rate_limit · cors ·   │
-│                ip_whitelist · openapi · static_files (rust_embed)    │
-│                                                                      │
-│  web/          React 19 + TS + Vite + Tailwind 4 · 3 248 стр         │
-│                Dashboard · Inbounds · Clients · Traffic · Nodes ·    │
-│                Settings · AuditLog · Diagnostics · Login             │
+├──────────────────────────────────────────────────────────────────────┤
+│  Один контекст читается сверху вниз по одинаковым каталогам во всех  │
+│  слоях. В корне слоя — только каталоги контекстов (проверяет тест).  │
 └──────────────────────────────────────────────────────────────────────┘</pre></div>
-        <p class="ansi-note">Разросшиеся файлы разбиты по каталогам в Э-51 (ultracode-волна 5):
-          <span class="mono">routes.rs</span>, <span class="mono">persistence.rs</span> и
-          <span class="mono">usecases.rs</span> стали модулями.</p>
+        <p class="ansi-note">Девять контекстов приложения и восемь доменных; <span class="mono">messaging</span> берёт словарь событий из <span class="mono">platform</span>, <span class="mono">kernel</span> — только общие порты.</p>
       </div>
-
       <div>
         <div class="ansi"><pre>┌─ <span class="k-hd">L3 · ПОТОК: ИЗМЕНЕНИЕ → DATA-PLANE</span> ─────────────────────────────────┐
 │                                                                      │
 │  <span class="k-step">[1]</span> <span class="k-api">xui-api</span>/routes        HTTP-хендлер: разбор DTO, никакой         │
-│      POST /api/inbounds    бизнес-логики; вызов use case             │
+│      POST /api/inbounds    бизнес-логики; вызов сценария             │
 │                  │                                                   │
 │                  v                                                   │
-│  <span class="k-step">[2]</span> <span class="k-app">xui-app</span>/usecases      ApplyConfig: репозиторий → желаемое       │
-│      ApplyConfig           состояние → зов порта XrayController      │
-│                  │                                                   │
+│  <span class="k-step">[2]</span> <span class="k-app">xui-app</span>/engine        ApplyConfig: берёт общий apply_session,   │
+│      ApplyConfig           читает желаемое состояние через узкий     │
+│                  │         порт InboundClientSource                  │
 │                  v                                                   │
-│  <span class="k-step">[3]</span> <span class="k-dom">xui-domain</span>/xray       HotDiffCalculator — чистая функция.       │
-│      HotDiffCalculator     Правила H1..H7 покрыты proptest.          │
+│  <span class="k-step">[3]</span> <span class="k-dom">xui-domain</span>/xray       HotDiffCalculator — чистая функция,       │
+│      HotDiffCalculator     индексы по тегам и email, proptest        │
 │                  │                                                   │
-│         ┌────────┼─────────────────┐                                 │
-│         v        v                 v                                 │
-│      NoOp    Hot(HotOps)        Restart                              │
-│      ничего  add/remove         сменились параметры,                 │
-│      делать  inbound/outbound,  которые hot не берёт                 │
-│      не надо routing, client_deltas                                  │
-│         │        │                 │                                 │
-│         │        v                 v                                 │
-│         │  <span class="k-step">[4a]</span> <span class="k-inf">xui-infra</span>     <span class="k-step">[4b]</span> <span class="k-inf">xui-infra</span>/xray_render             │
-│         │  handler_config/    полный JSON-конфиг в файл              │
-│         │  dispatcher →       (policy · api · stats) и               │
-│         │  AddInbound /       перезапуск процесса актором            │
-│         │  AlterInbound       с честным state()                      │
-│         │        │                 │                                 │
-│         └────────┴────────┬────────┘                                 │
-│                           v                                          │
+│      ┌───────────┼──────────────────┬───────────────┐                │
+│      v           v                  v               v                │
+│    NoOp      Hot(HotOps)      пересоздать       Restart              │
+│    ничего    add/remove       один inbound      статика, api_tag,    │
+│    делать    inbound, rules,  (Socks · HTTP ·   снимок inbound       │
+│    не надо   пользователи     WireGuard)        или outbound         │
+│                  │                  │               │                │
+│                  v                  v               v                │
+│  <span class="k-step">[4a]</span> <span class="k-inf">xui-infra-xray</span>/xray_grpc      <span class="k-step">[4b]</span> xray_render                 │
+│      RemoveInbound → AlterInbound        xray -test → запись         │
+│      → AddInbound                        0600 → перенос счётчиков    │
+│      ошибка gRPC ───────────────────────▶ → рестарт актора           │
+│                  │                                  │                │
+│                  └────────────────┬─────────────────┘                │
+│                                   v                                  │
 │  <span class="k-step">[5]</span> Xray-core :10085     HandlerService применяет операции.         │
 │                           StatsService отдаёт счётчики обратно —     │
 │                           планировщик читает их следующим тиком.     │
 │                                                                      │
 ├──────────────────────────────────────────────────────────────────────┤
-│  Форматы Xray (JSON и protobuf) не поднимаются выше <span class="k-inf">xui-infra</span>/xray*. │
+│  Форматы Xray (JSON и protobuf) не выходят за <span class="k-inf">xui-infra-xray</span>.        │
 │  Домен отдаёт ApplyPlan — адаптер решает, как его исполнить.         │
 └──────────────────────────────────────────────────────────────────────┘</pre></div>
-        <p class="ansi-note">Ветка <span class="mono">client_deltas</span> — это H7 (Э-31): точечный
-          add/remove пользователя через <span class="mono">AlterInbound</span>, когда снапшот настроек
-          inbound&#x27;а не изменился. Иначе изменение уходит в Restart.</p>
+        <p class="ansi-note">Diff клиентов считается до сравнения конфигов, Remove идёт раньше Add; настройка может превратить окончательное удаление пользователя в Restart, чтобы оборвать живые соединения.</p>
       </div>
-
       <div>
         <div class="ansi"><pre>┌─ <span class="k-hd">L4 · ЦЕПОЧКА ЗАЩИЩЁННОГО ЗАПРОСА</span> ───────────────────────────────────┐
 │                                                                      │
 │  запрос                                                              │
 │    │                                                                 │
-│    ├─ TrustMode        X-Forwarded-For учитывается только от         │
-│    │                   доверенных прокси; по умолчанию — нет         │
-│    ├─ IP-whitelist     CidrBlock из настроек панели                  │
-│    ├─ rate-limit       глобальный + per-user                         │
-│    ├─ CORS             список origin из PanelSettings                │
-│    ├─ сессия           cookie → session_store, TTL, ротация          │
-│    ├─ CSRF             constant-time сравнение; 403 → тихий re-auth  │
-│    ├─ 2FA (TOTP)       state-enum: Setup → Confirmed, guard в типе   │
-│    └─ audit-log        вход/выход, отказы, мутирующие операции       │
+│    ├─ security headers  CSP с nonce · nosniff · HSTS за https-прокси │
+│    ├─ CORS              список origin из настроек панели             │
+│    ├─ сессия            cookie HttpOnly · Strict · Secure, SQLite    │
+│    ├─ rate-limit        120 / 60 с на пользователя или IP;           │
+│    │                    5 / 300 с на вход, 2FA, пароль, токены       │
+│    ├─ IP-whitelist      CidrBlock; TrustMode — XFF только от         │
+│    │                    доверенного прокси                           │
+│    ├─ auth              Bearer (API-токен, 6 областей) или cookie;   │
+│    │                    session_epoch гасит старые сессии            │
+│    ├─ CSRF              constant-time; не нужен проверенному Bearer  │
+│    └─ reauth / 2FA      пароль + TOTP для смены пароля и токенов     │
 │          │                                                           │
 │          v                                                           │
-│       хендлер → use case                                             │
+│       хендлер → сценарий → audit-log                                 │
 │                                                                      │
 ├──────────────────────────────────────────────────────────────────────┤
-│  Федерация — отдельный периметр: /api/federation/import проверяет    │
-│  federation_token, а не админскую сессию (Э-55.А).                   │
+│  Области токена: Read · Clients · Inbounds · Admin · Node ·          │
+│  Federation. Маршрут → область задаёт одна функция; неизвестный      │
+│  изменяющий маршрут требует Admin (закрыто по умолчанию).            │
 └──────────────────────────────────────────────────────────────────────┘</pre></div>
-        <p class="ansi-note">Тихий re-auth на протухшей CSRF-сессии (Э-44) и живой цикл 2FA (Э-46)
-          проверены в браузере, а не только тестами.</p>
+        <p class="ansi-note">Auth и CSRF стоят только на защищённой группе; импорт федерации проверяет собственный токен, подписка и платёжный webhook идут мимо IP-whitelist.</p>
       </div>
-
       <div>
         <div class="ansi"><pre>┌─ <span class="k-hd">L5 · МАТРИЦА ПРОВИЗИИ ПРОТОКОЛОВ</span> ───────────────────────────────────┐
 │                                                                      │
-│  протокол        restart   AddInbound   AlterInbound (per-user)      │
+│  протокол        restart  AddInbound  пользователи на лету           │
 │  ───────────────────────────────────────────────────────────────     │
-│  VLESS             <span class="k-ok">[x]</span>        <span class="k-ok">[x]</span>         <span class="k-ok">[x]</span>                        │
-│  VMess             <span class="k-ok">[x]</span>        <span class="k-ok">[x]</span>         <span class="k-ok">[x]</span>  коллизия решена       │
-│  Trojan            <span class="k-ok">[x]</span>        <span class="k-ok">[x]</span>         <span class="k-ok">[x]</span>                        │
-│  Shadowsocks       <span class="k-ok">[x]</span>        <span class="k-ok">[x]</span>         <span class="k-ok">[x]</span>  вкл. SS-2022          │
-│  Socks             <span class="k-ok">[x]</span>        <span class="k-ok">[x]</span>         <span class="k-no">[-]</span>  map-модель аккаунтов  │
-│  HTTP              <span class="k-ok">[x]</span>        <span class="k-ok">[x]</span>         <span class="k-no">[-]</span>  map-модель аккаунтов  │
-│  Dokodemo-door     <span class="k-ok">[x]</span>        <span class="k-ok">[x]</span>         <span class="k-dim">n/a</span>  нет клиентской модели │
-│  WireGuard         <span class="k-ok">[x]</span>        <span class="k-ok">[x]</span>         <span class="k-dim">n/a</span>  whole-device конфиг   │
-│  Hysteria v1       <span class="k-ok">[x]</span>        <span class="k-ok">[x]</span>         <span class="k-dim">n/a</span>  свой UDP-протокол     │
-│  MtProto           вне Xray-lifecycle: внешний процесс mtg           │
-│  Tuic              тег домена есть, протокола нет в форке Xray       │
+│  VLESS             <span class="k-ok">[x]</span>       <span class="k-ok">[x]</span>       <span class="k-ok">[x]</span>  AlterInbound             │
+│  VMess             <span class="k-ok">[x]</span>       <span class="k-ok">[x]</span>       <span class="k-ok">[x]</span>  AlterInbound             │
+│  Trojan            <span class="k-ok">[x]</span>       <span class="k-ok">[x]</span>       <span class="k-ok">[x]</span>  AlterInbound             │
+│  Shadowsocks       <span class="k-ok">[x]</span>       <span class="k-ok">[x]</span>       <span class="k-ok">[x]</span>  вкл. SS-2022             │
+│  Hysteria 2        <span class="k-ok">[x]</span>       <span class="k-ok">[x]</span>       <span class="k-ok">[x]</span>  AlterInbound             │
+│  Socks             <span class="k-ok">[x]</span>       <span class="k-ok">[x]</span>       <span class="k-no">[~]</span>  пересоздание inbound     │
+│  HTTP              <span class="k-ok">[x]</span>       <span class="k-ok">[x]</span>       <span class="k-no">[~]</span>  пересоздание inbound     │
+│  WireGuard         <span class="k-ok">[x]</span>       <span class="k-ok">[x]</span>       <span class="k-no">[~]</span>  пересоздание inbound     │
+│  Dokodemo-door     <span class="k-ok">[x]</span>       <span class="k-ok">[x]</span>       <span class="k-dim">n/a</span>  нет клиентской модели    │
+│  AmneziaWG         sidecar xui-awg: пиры меняются через loopback API;│
+│                    в Xray виден как SOCKS-relay с тем же тегом       │
+│  MTProto           sidecar mtg-multi: секреты меняются на лету       │
+│  Tuic              тег домена есть, исполнителя нет                  │
 │                                                                      │
-│  транспорты: tcp · kcp · ws · grpc · httpupgrade · xhttp             │
+│  транспорты: tcp · kcp · ws · grpc · httpupgrade · xhttp · hysteria  │
 │  безопасность: none · tls · reality (x25519-keygen в панели)         │
 │                                                                      │
 ├──────────────────────────────────────────────────────────────────────┤
-│  <span class="k-no">[-]</span> — не пробел реализации, а структурное ограничение форка Xray;   │
-│  закрыть его можно лишь правкой GPL-вендора — запрещено clean-room.  │
+│  <span class="k-no">[~]</span> — Xray не умеет менять этих пользователей на месте: панель      │
+│  пересоздаёт один inbound, остальные соединения не рвутся.           │
 └──────────────────────────────────────────────────────────────────────┘</pre></div>
-        <p class="ansi-note">Имена полей protobuf/JSON сверены 1:1 с вендором и записаны заново —
-          clean-room: берём контракт, а не строки чужого кода.</p>
+        <p class="ansi-note">Имена полей protobuf/JSON сверены 1:1 с вендором и записаны заново — clean-room: берём контракт, а не строки чужого кода.</p>
+      </div>
+      <div>
+        <div class="ansi"><pre>┌─ <span class="k-hd">L6 · ЖИЗНЕННЫЙ ЦИКЛ: ТИК И ОСТАНОВКА</span> ───────────────────────────────┐
+│                                                                      │
+│  тик обслуживания (60 с) — MaintenanceCycle в <span class="k-app">xui-app</span>                │
+│    политика → онлайн и IP-лимит → сбор трафика → сброс inbound →     │
+│    сброс клиентов → истечение → ApplyConfig → очереди оплаты →       │
+│    алерты об истечении. Сбой стадии не пропускает следующие.         │
+│                                                                      │
+│  события — EventBus (broadcast 256), публикуют только сценарии       │
+│    ├─ лог                                                            │
+│    ├─ CooldownNotifier → Telegram                                    │
+│    ├─ SSE /api/events → браузер                                      │
+│    └─ плагины: своя подписка на каждый NotifierPlugin                │
+│                                                                      │
+│  остановка по фазам, 15 с на задачу                                  │
+│    Ingress      Telegram-поллеры                                     │
+│    Producers    планировщик (последний сбор) · sidecar · heartbeat   │
+│    Runtime      Xray                                                 │
+│    Observers    доставка событий · телеметрия · плагины              │
+│    затем закрывается пул SQLite                                      │
+│                                                                      │
+├──────────────────────────────────────────────────────────────────────┤
+│  Критические задачи — планировщик и актор Xray: их выход запускает   │
+│  ту же упорядоченную остановку, что и сигнал ОС.                     │
+└──────────────────────────────────────────────────────────────────────┘</pre></div>
+        <p class="ansi-note">Порядок тика принадлежит слою приложения и проверяется без Tokio и SQLite; адаптер планировщика владеет только таймером, остановкой и логом.</p>
       </div>
 
     </div>
@@ -547,8 +572,9 @@
       <span class="eyebrow">C4 · Level 1</span>
     </div>
     <p class="lead">Панель — единственный control-plane. Она хранит состояние в SQLite, толкает
-      конфигурацию в отдельный процесс Xray по gRPC, отдаёт клиентам ссылки-подписки и обменивается
-      клиентами с федеративными нодами.</p>
+      конфигурацию в процесс Xray по gRPC, отдаёт клиентам ссылки-подписки, опрашивает управляемые
+      ноды и обменивается клиентами с peer-панелями. Sidecar-процессы для AmneziaWG и MTProto и
+      платёжный webhook на схеме опущены — они показаны на уровне L0 выше.</p>
     <figure class="frame">
       <svg viewBox="0 0 900 380" role="img" aria-label="Диаграмма системного контекста">
         <defs>
@@ -562,24 +588,24 @@
         <rect x="336" y="150" width="228" height="86" rx="12" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.5"/>
         <text x="450" y="182" text-anchor="middle" class="node-t" fill="var(--accent-ink)" font-size="16">3x-ui-panel</text>
         <text x="450" y="203" text-anchor="middle" class="node-s" fill="var(--muted)" font-size="12">control-plane (Rust)</text>
-        <text x="450" y="220" text-anchor="middle" class="node-s" fill="var(--faint)" font-size="11">axum · REST/WS · подписки</text>
+        <text x="450" y="220" text-anchor="middle" class="node-s" fill="var(--faint)" font-size="11">axum · REST/SSE · подписки</text>
 
         <rect x="40" y="168" width="150" height="50" rx="9" fill="var(--surface-2)" stroke="var(--line-strong)"/>
         <text x="115" y="190" text-anchor="middle" class="node-s" fill="var(--ink)" font-size="12.5">Web-UI · API-клиент</text>
-        <text x="115" y="207" text-anchor="middle" class="node-s" fill="var(--faint)" font-size="11">сессии · 2FA · CSRF</text>
+        <text x="115" y="207" text-anchor="middle" class="node-s" fill="var(--faint)" font-size="11">сессии · 2FA · API-токены</text>
         <line x1="190" y1="193" x2="332" y2="193" stroke="var(--faint)" stroke-width="1.4" marker-end="url(#ar)"/>
         <text x="260" y="185" text-anchor="middle" class="node-s" fill="var(--faint)" font-size="10.5">HTTPS</text>
 
         <rect x="710" y="150" width="150" height="66" rx="9" fill="var(--surface-2)" stroke="var(--accent)"/>
         <text x="785" y="176" text-anchor="middle" class="node-t" fill="var(--ink)" font-size="13">Xray-core</text>
-        <text x="785" y="193" text-anchor="middle" class="node-s" fill="var(--faint)" font-size="11">data-plane · процесс</text>
+        <text x="785" y="193" text-anchor="middle" class="node-s" fill="var(--faint)" font-size="11">data-plane · дочерний процесс</text>
         <text x="785" y="208" text-anchor="middle" class="node-s" fill="var(--faint)" font-size="11">gRPC :10085</text>
         <line x1="566" y1="185" x2="706" y2="183" stroke="var(--accent)" stroke-width="1.6" marker-end="url(#arA)"/>
         <text x="636" y="175" text-anchor="middle" class="node-s" fill="var(--accent-ink)" font-size="10.5">Handler/Stats</text>
 
         <rect x="336" y="20" width="228" height="46" rx="9" fill="var(--surface-2)" stroke="var(--line-strong)"/>
         <text x="450" y="41" text-anchor="middle" class="node-s" fill="var(--ink)" font-size="12.5">SQLite</text>
-        <text x="450" y="57" text-anchor="middle" class="node-s" fill="var(--faint)" font-size="11">админы · inbounds · clients · settings</text>
+        <text x="450" y="57" text-anchor="middle" class="node-s" fill="var(--faint)" font-size="11">43 миграции · 30 таблиц</text>
         <line x1="450" y1="150" x2="450" y2="70" stroke="var(--faint)" stroke-width="1.4" marker-end="url(#ar)"/>
 
         <rect x="60" y="290" width="150" height="46" rx="9" fill="var(--surface-2)" stroke="var(--line-strong)"/>
@@ -593,8 +619,8 @@
         <line x1="450" y1="236" x2="450" y2="298" stroke="var(--faint)" stroke-width="1.4" marker-end="url(#ar)"/>
 
         <rect x="690" y="290" width="170" height="46" rx="9" fill="var(--surface-2)" stroke="var(--line-strong)"/>
-        <text x="775" y="311" text-anchor="middle" class="node-s" fill="var(--ink)" font-size="12.5">Федеративные ноды</text>
-        <text x="775" y="327" text-anchor="middle" class="node-s" fill="var(--faint)" font-size="11">импорт/экспорт клиентов</text>
+        <text x="775" y="311" text-anchor="middle" class="node-s" fill="var(--ink)" font-size="12.5">Ноды и peer-панели</text>
+        <text x="775" y="327" text-anchor="middle" class="node-s" fill="var(--faint)" font-size="11">heartbeat · node-sync · импорт</text>
         <line x1="540" y1="236" x2="700" y2="288" stroke="var(--faint)" stroke-width="1.4" marker-end="url(#ar)"/>
       </svg>
       <figcaption>Оранжевое ребро — единственный путь к data-plane: панель отдаёт Xray-core план изменений по gRPC, трафик через панель не идёт.</figcaption>
@@ -607,20 +633,22 @@
   <div class="wrap">
     <div class="sec-head">
       <h2>Слои гексагона</h2>
-      <span class="eyebrow">C4 · Level 2 · крейты</span>
+      <span class="eyebrow">C4 · Level 2 · девять крейтов</span>
     </div>
-    <p class="lead">Правило зависимостей (06.1): <span class="mono">xui-infra / xui-api → xui-app → xui-domain</span>.
+    <p class="lead">Правило зависимостей: <span class="mono">api / infra → app → domain</span>.
       Домен синхронный и чистый — без <span class="mono">tokio/sqlx/tonic</span> и без внешних зависимостей
-      в Cargo.toml. Инфраструктура зависит от абстракций (портов), а не наоборот.</p>
+      в Cargo.toml. Инфраструктура разделена на общее ядро, три листовых адаптера, которые не видят друг
+      друга, и фасад с интеграциями. HTTP-слой про инфраструктуру не знает: их связывает только
+      composition root.</p>
 
     <div class="layers">
       <div class="layer" style="--lc:var(--bin)">
         <div class="layer-top">
           <span class="name">xui-bin</span>
-          <span class="role">composition root — собирает адаптеры и запускает панель</span>
-          <span class="tag">bin «xui» · 434 стр</span>
+          <span class="role">composition root — готовит приложение, запускает задачи и останавливает их по фазам</span>
+          <span class="tag">бинари «xui» и «xui-peer-sync» · 2,8 тыс. стр</span>
         </div>
-        <div class="mods"><span class="mod">main.rs</span><span class="mod">DI всех портов</span><span class="mod">BootstrapAdmin</span><span class="mod">Config::load (fail-fast)</span><span class="mod">graceful shutdown</span></div>
+        <div class="mods"><span class="mod">config · bootstrap</span><span class="mod">startup</span><span class="mod">stores</span><span class="mod">integrations</span><span class="mod">commerce</span><span class="mod">http · AppPorts</span><span class="mod">composition</span><span class="mod">runtime</span><span class="mod">lifecycle · TaskPlan</span><span class="mod">telemetry</span><span class="mod">plugins</span><span class="mod">transport</span></div>
       </div>
 
       <div class="dep-note">▼ &nbsp; зависит от &nbsp; ▼</div>
@@ -628,51 +656,61 @@
       <div class="layer" style="--lc:var(--api)">
         <div class="layer-top">
           <span class="name">xui-api</span>
-          <span class="role">HTTP-адаптер: axum REST + WS/SSE, сессии, безопасность, статика</span>
-          <span class="tag">адаптер (async) · 13 510 стр</span>
+          <span class="role">HTTP-адаптер: axum REST + SSE, сессии, безопасность, OpenAPI, встроенный SPA</span>
+          <span class="tag">адаптер (async) · 24,2 тыс. стр</span>
         </div>
-        <div class="mods">
-          <span class="mod">routes/inbounds</span><span class="mod">routes/clients</span><span class="mod">routes/groups</span>
-          <span class="mod">routes/bulk</span><span class="mod">routes/subscription</span><span class="mod">routes/settings</span>
-          <span class="mod">routes/metrics</span><span class="mod">routes/audit</span><span class="mod">routes/reality</span>
-          <span class="mod">auth · session · csrf</span><span class="mod">twofa_handlers</span>
-          <span class="mod">rate_limit · cors · ip_whitelist</span><span class="mod">federation_handlers</span>
-          <span class="mod">backup_handlers</span><span class="mod">node_handlers</span>
-          <span class="mod">events_handlers · SSE</span><span class="mod">diagnostics_handlers</span>
-          <span class="mod">static_files · rust_embed</span><span class="mod">openapi</span>
-        </div>
+        <div class="mods"><span class="mod">routes/access</span><span class="mod">routes/fleet</span><span class="mod">routes/platform</span><span class="mod">routes/sales</span><span class="mod">routes/subscription</span><span class="mod">auth · token_scope</span><span class="mod">session · csrf · reauth</span><span class="mod">rate_limit · cors · ip_whitelist</span><span class="mod">security_headers</span><span class="mod">state/ports · 8 групп</span><span class="mod">openapi · utoipa</span><span class="mod">static_files · rust_embed</span></div>
       </div>
-
       <div class="layer" style="--lc:var(--infra)">
         <div class="layer-top">
           <span class="name">xui-infra</span>
-          <span class="role">адаптеры: persistence, Xray, уведомления, крипто, планировщик</span>
-          <span class="tag">адаптеры (tokio) · 13 948 стр</span>
+          <span class="role">фасад и интеграции: Telegram, платежи, ACME, TOTP, sidecar-процессы, управление установленным Xray</span>
+          <span class="tag">интеграции (tokio) · 11,5 тыс. стр</span>
         </div>
-        <div class="mods">
-          <span class="mod">persistence/ · sqlx</span><span class="mod">xray_adapter</span><span class="mod">xray_grpc · tonic</span>
-          <span class="mod">xray_render</span><span class="mod">xray · process</span><span class="mod">handler_config/ · protobuf</span>
-          <span class="mod">scheduler</span><span class="mod">session_store</span><span class="mod">totp</span>
-          <span class="mod">password · argon2</span><span class="mod">crypto_keys · x25519</span>
-          <span class="mod">telegram · teloxide</span><span class="mod">notify</span><span class="mod">mtproto</span>
-          <span class="mod">acme</span><span class="mod">backup</span><span class="mod">federation</span><span class="mod">events</span>
+        <div class="mods"><span class="mod">messaging · teloxide</span><span class="mod">sales · платёжный IPN</span><span class="mod">sales · activation · delivery</span><span class="mod">platform · acme · totp</span><span class="mod">platform · sidecar</span><span class="mod">platform · host_metrics</span><span class="mod">engine · xray_runtime + installer</span><span class="mod">реэкспорт листовых адаптеров</span></div>
+      </div>
+      <div class="layer" style="--lc:var(--infra)">
+        <div class="layer-top">
+          <span class="name">xui-infra-xray</span>
+          <span class="role">ACL Xray: актор процесса, gRPC, рендер JSON, protobuf-конфиг</span>
+          <span class="tag">листовой адаптер · 11,1 тыс. стр</span>
         </div>
+        <div class="mods"><span class="mod">xray · процесс-актор</span><span class="mod">xray_adapter</span><span class="mod">xray_grpc · tonic 0.14</span><span class="mod">xray_render</span><span class="mod">handler_config/ · protobuf</span><span class="mod">xray_inbound_rules</span></div>
+      </div>
+      <div class="layer" style="--lc:var(--infra)">
+        <div class="layer-top">
+          <span class="name">xui-infra-sqlite</span>
+          <span class="role">хранилище: sqlx + миграции, сессии, бэкап, шина событий, пароли и токены</span>
+          <span class="tag">листовой адаптер · 11,4 тыс. стр</span>
+        </div>
+        <div class="mods"><span class="mod">persistence/access</span><span class="mod">persistence/fleet</span><span class="mod">persistence/platform</span><span class="mod">persistence/sales</span><span class="mod">persistence/traffic</span><span class="mod">persistence/kernel</span><span class="mod">session_store</span><span class="mod">backup</span><span class="mod">events · EventBus</span><span class="mod">password · argon2</span><span class="mod">api_token</span></div>
+      </div>
+      <div class="layer" style="--lc:var(--infra)">
+        <div class="layer-top">
+          <span class="name">xui-infra-federation</span>
+          <span class="role">обмен с нодами и peer-панелями: HTTPS-клиент с pin сертификата, heartbeat, SSRF-гард</span>
+          <span class="tag">листовой адаптер · 2,8 тыс. стр</span>
+        </div>
+        <div class="mods"><span class="mod">node_client</span><span class="mod">node_heartbeat</span><span class="mod">federation · peer</span><span class="mod">outbound · SSRF-гард</span></div>
+      </div>
+      <div class="layer" style="--lc:var(--infra)">
+        <div class="layer-top">
+          <span class="name">xui-infra-kernel</span>
+          <span class="role">общее ядро адаптеров</span>
+          <span class="tag">механизмы · 2,4 тыс. стр</span>
+        </div>
+        <div class="mods"><span class="mod">child_process</span><span class="mod">private_file · 0600</span><span class="mod">crypto_keys · x25519</span><span class="mod">scheduler · таймер</span><span class="mod">shutdown</span></div>
       </div>
 
-      <div class="dep-note">▼ &nbsp; оба зависят от &nbsp; ▼</div>
+      <div class="dep-note">▼ &nbsp; все зависят от &nbsp; ▼</div>
 
       <div class="layer" style="--lc:var(--app)">
         <div class="layer-top">
           <span class="name">xui-app</span>
-          <span class="role">use cases + 25 портов (traits): Clock, репозитории, XrayController, Notifier</span>
-          <span class="tag">оркестрация · 6 045 стр</span>
+          <span class="role">сценарии и порты по девяти контекстам; единственная внешняя зависимость — макрос async-trait</span>
+          <span class="tag">оркестрация · 15,9 тыс. стр</span>
         </div>
-        <div class="mods">
-          <span class="mod">ports · 25 traits</span><span class="mod">usecases/inbound</span><span class="mod">usecases/client</span>
-          <span class="mod">usecases/traffic</span><span class="mod">usecases/node</span><span class="mod">usecases/federation</span>
-          <span class="mod">usecases/scheduler</span><span class="mod">usecases/bootstrap</span><span class="mod">usecases/bot</span>
-          <span class="mod">plugins</span>
-        </div>
+        <div class="mods"><span class="mod">access</span><span class="mod">engine · ApplyConfig</span><span class="mod">traffic</span><span class="mod">fleet</span><span class="mod">messaging</span><span class="mod">sales</span><span class="mod">subscription</span><span class="mod">platform · MaintenanceCycle</span><span class="mod">kernel · Clock · EventPublisher</span><span class="mod">узкие порты + статические мосты</span><span class="mod">plugins · NotifierPlugin</span><span class="mod">testkit</span></div>
       </div>
 
       <div class="dep-note">▼ &nbsp; зависит от &nbsp; ▼</div>
@@ -681,22 +719,16 @@
         <div class="layer-top">
           <span class="name">xui-domain</span>
           <span class="role">ЯДРО: sync, без I/O, ноль внешних зависимостей — инварианты и VO</span>
-          <span class="tag">чистый домен · 10 658 стр</span>
+          <span class="tag">чистый домен · 23,5 тыс. стр</span>
         </div>
-        <div class="mods">
-          <span class="mod">access · Inbound/Client</span><span class="mod">credentials</span><span class="mod">protocol</span>
-          <span class="mod">reality</span><span class="mod">shadowsocks · SS-2022</span>
-          <span class="mod">xray · ApplyPlan/HotDiff</span><span class="mod">traffic</span><span class="mod">subscription</span>
-          <span class="mod">settings · TrustMode</span><span class="mod">admin · 2FA</span><span class="mod">node</span>
-          <span class="mod">federation</span><span class="mod">events · AuditEvent</span>
-        </div>
+        <div class="mods"><span class="mod">access · Inbound/Client</span><span class="mod">protocols · Credentials</span><span class="mod">traffic · Quota</span><span class="mod">xray · ApplyPlan/HotDiff</span><span class="mod">subscription</span><span class="mod">fleet · Node · SSRF</span><span class="mod">sales · статусы</span><span class="mod">platform · settings · admin · токены · события</span></div>
       </div>
     </div>
 
     <div class="legend">
       <span><i class="sw" style="background:var(--domain)"></i>domain</span>
       <span><i class="sw" style="background:var(--app)"></i>app</span>
-      <span><i class="sw" style="background:var(--infra)"></i>infra</span>
+      <span><i class="sw" style="background:var(--infra)"></i>infra · 5 крейтов</span>
       <span><i class="sw" style="background:var(--api)"></i>api</span>
       <span><i class="sw" style="background:var(--bin)"></i>bin</span>
     </div>
@@ -711,31 +743,29 @@
       <span class="eyebrow">runtime · hot-apply</span>
     </div>
     <p class="lead">Как изменение (например, новый inbound или новый клиент) доходит до data-plane. Домен решает
-      <em>что</em> делать (ApplyPlan), адаптер <em>исполняет</em> — форматы Xray не протекают глубже
-      <span class="mono">xui-infra/xray</span>.</p>
+      <em>что</em> делать (ApplyPlan), адаптер <em>исполняет</em> — форматы Xray не выходят за крейт
+      <span class="mono">xui-infra-xray</span>.</p>
     <div class="frame">
       <div class="flow">
         <div class="step"><div class="n">1</div><div class="body">
           <b>xui-api · routes</b> <span class="where">HTTP-хендлер</span>
-          <p>Принимает запрос, валидирует DTO, вызывает use case. Бизнес-логики в хендлере нет.</p>
+          <p>Принимает запрос, валидирует DTO, вызывает сценарий. Бизнес-логики в хендлере нет.</p>
         </div></div>
         <div class="step"><div class="n">2</div><div class="body">
-          <b>xui-app · ApplyConfig</b> <span class="where">use case через порт</span>
-          <p>Собирает желаемое состояние из репозиториев (inbounds + clients) и зовёт порт
-            <span class="mono">XrayController</span>. О gRPC ничего не знает.</p>
+          <b>xui-app · engine · ApplyConfig</b> <span class="where">сценарий через порты</span>
+          <p>Берёт общий <span class="mono">apply_session</span>, читает желаемое состояние через узкий порт <span class="mono">InboundClientSource</span> и зовёт <span class="mono">XrayController</span>. О gRPC ничего не знает. Если Xray поставлен на паузу администратором — возвращает NoOp.</p>
         </div></div>
         <div class="step"><div class="n">3</div><div class="body">
           <b>xui-domain · HotDiffCalculator</b> <span class="where">чистая функция</span>
-          <p>Сравнивает желаемую и текущую конфигурацию → <span class="mono">ApplyPlan</span>: NoOp / Hot(ops) / Restart. Каждое правило (H1–H7) покрыто тестом + proptest.</p>
+          <p>Сравнивает желаемую и применённую конфигурацию → <span class="mono">ApplyPlan</span>: NoOp / Hot(ops) / Restart. Клиенты сравниваются до конфигов; для протоколов без правки пользователей на месте план пересоздаёт один inbound.</p>
         </div></div>
         <div class="step"><div class="n">4</div><div class="body">
-          <b>xui-infra · handler_config + xray_render</b> <span class="where">адаптер</span>
-          <p>Hot → per-inbound protobuf через <span class="mono">AddInbound</span>, точечные клиенты — через
-            <span class="mono">AlterInbound</span>; Restart → рендер полного конфига (policy/api/stats) в файл и перезапуск процесса.</p>
+          <b>xui-infra-xray · xray_grpc + xray_render</b> <span class="where">адаптер</span>
+          <p>Hot → <span class="mono">RemoveInbound</span>, <span class="mono">AlterInbound</span>, <span class="mono">AddInbound</span>; любая ошибка gRPC эскалируется в Restart. Restart → кандидат конфига проходит <span class="mono">xray -test</span>, пишется атомарно с правами 0600, счётчики переносятся через рестарт.</p>
         </div></div>
         <div class="step"><div class="n">5</div><div class="body">
           <b>Xray-core</b> <span class="where">gRPC :10085</span>
-          <p>HandlerService применяет изменения. Счётчики трафика (policy <span class="mono">statsUser*</span>) читаются обратно планировщиком в следующем тике.</p>
+          <p>HandlerService применяет изменения. Счётчики трафика читаются обратно планировщиком в следующем тике и в той же транзакции применяют квоту и срок клиента.</p>
         </div></div>
       </div>
     </div>
@@ -752,48 +782,79 @@
     <div class="grid2">
       <div class="card">
         <h3>Безопасность API</h3>
-        <p>Цепочка middleware перед каждым защищённым маршрутом:</p>
+        <p>Слои перед защищённым маршрутом — в порядке исполнения:</p>
         <ul>
-          <li><code>TrustMode</code> — источник IP из <code>X-Forwarded-For</code> только для доверенных прокси (дефолт — не доверять)</li>
-          <li>сессии + <code>CSRF</code> (constant-time сравнение) + 2FA (TOTP, state-enum guard)</li>
-          <li>rate-limit (глобальный и per-user), IP-whitelist, CORS из настроек</li>
-          <li>федерация — отдельный периметр по <code>federation_token</code>, не по админской сессии</li>
-          <li>audit-log: вход/выход, неудачные попытки, мутирующие операции</li>
+          <li>security headers с CSP-nonce, CORS по списку origin</li>
+          <li>сессия в SQLite; <code>session_epoch</code> гасит сессии после смены пароля или 2FA</li>
+          <li>rate-limit на пользователя или IP, строгий лимит на вход и чувствительные операции</li>
+          <li>IP-whitelist; <code>TrustMode</code> — <code>X-Forwarded-For</code> только от доверенного прокси</li>
+          <li>Bearer API-токен с шестью областями либо cookie + <code>CSRF</code></li>
+          <li>reauth (пароль + TOTP) для смены пароля и выпуска токенов; audit-log</li>
         </ul>
       </div>
       <div class="card">
         <h3>Xray за ACL</h3>
-        <p>JSON-конфиг и gRPC-контракты Xray изолированы в <code>xui-infra/xray*</code> и
-          <code>handler_config/</code>. Домен оперирует типизированной моделью
-          (<code>XrayConfig</code>, <code>ApplyPlan</code>), адаптер переводит её в протокол data-plane.
-          Процесс управляется актором с честным <code>state()</code> через разделяемый атомик.</p>
+        <p>JSON-конфиг и gRPC-контракты Xray изолированы в крейте <code>xui-infra-xray</code>.
+          Домен оперирует типизированной моделью (<code>XrayConfig</code>, <code>ApplyPlan</code>), адаптер
+          переводит её в протокол data-plane. Процессом управляет актор; администратор может остановить,
+          перезапустить и обновить Xray из панели — обновление сверяет SHA-256 и откатывается при неудаче.</p>
       </div>
       <div class="card">
         <h3>Типы вместо проверок</h3>
         <p>Невозможные состояния невыразимы: <code>Protocol</code>, <code>Credentials</code>,
-          <code>Quota</code>, <code>TrustMode</code>, <code>ShortId</code>, <code>Fingerprint</code>,
-          <code>Ss2022Method</code> — enum/newtype с валидацией в <code>TryFrom</code>/<code>parse</code>.
-          <code>StreamSettings::validate</code> проверяет совместимость network↔transport и security↔{tls,reality}.
-          Поля агрегатов приватны, ошибки — enum-значения.</p>
+          <code>Quota</code>, <code>ExpiryTime</code>, <code>IpLimit</code>, <code>TrustMode</code>,
+          <code>ApiScopes</code> — enum/newtype с валидацией в <code>parse</code>. «Магического нуля» нет:
+          безлимит — отдельный вариант, а не 0. Поля агрегатов приватны, ошибки — enum-значения.</p>
+      </div>
+      <div class="card">
+        <h3>Узкие порты</h3>
+        <p>Читающий сценарий не получает CRUD-контракт: <code>ApplyConfig</code> видит только
+          <code>InboundClientSource</code>, сборщик трафика — <code>TrafficRecorder</code>, проверка
+          истечения — <code>ExpiryStore</code>. Существующие адаптеры подключаются статическим мостом
+          <code>impl&lt;T: Широкий&gt; Узкий for T</code> — без boxing и новых аллокаций.</p>
       </div>
       <div class="card">
         <h3>Персистентность и джобы</h3>
-        <p>SQLite через <code>sqlx</code>; составные операции (create+attach, settings)
-          в одной транзакции, списки без N+1. Планировщик тиком собирает трафик, считает онлайн,
-          применяет расписания сброса, квоты, IP-лимиты и алерты. Бэкап/restore с проверкой
-          SQLite-магии и <code>integrity_check</code>.</p>
+        <p>SQLite через <code>sqlx</code>: 43 миграции, репозитории разложены по контекстам.
+          Счётчик трафика, запуск срока и блокировка по квоте фиксируются одной транзакцией.
+          Цикл обслуживания принадлежит слою приложения и тестируется без Tokio и SQLite.
+          Бэкап — <code>VACUUM INTO</code>, восстановление проверяет целостность, внешние ключи
+          и историю миграций.</p>
+      </div>
+      <div class="card">
+        <h3>События и плагины</h3>
+        <p>Сценарии публикуют <code>DomainEvent</code> после commit; на шину подписаны лог,
+          Telegram (через cooldown), SSE-поток для браузера и плагины. Каждый
+          <code>NotifierPlugin</code> получает собственную подписку, поэтому упавший или медленный
+          плагин не задерживает остальных.</p>
       </div>
       <div class="card">
         <h3>Подписки</h3>
-        <p>Одна доменная модель <code>SubscriptionLink</code> → несколько форматов:
-          base64-список ссылок, Clash YAML, JSON, sing-box outbounds, конфиг WireGuard.
-          Шаблоны remark с переменными. Round-trip и генерация ссылок покрыты proptest.</p>
+        <p>Единый профиль исходящего соединения → несколько форматов: base64-список ссылок,
+          Clash YAML, JSON, sing-box outbounds, конфиг WireGuard и AmneziaWG. Шаблоны remark с
+          переменными. Формат — публичный контракт с клиентским приложением: общая фикстура
+          проверяется тестами обеих сторон.</p>
       </div>
       <div class="card">
         <h3>Web-UI</h3>
-        <p>React 19 + TypeScript + Vite + Tailwind 4, встраивается в бинарь через
-          <code>rust_embed</code>. Живые обновления — <code>EventSource</code> поверх SSE-эндпоинта
-          доменных событий. Формы защищены от NaN, ошибки сохранения показываются, а не глотаются.</p>
+        <p>React 19 + Router 7 + TypeScript 6 + Vite 8 + Tailwind 4, встраивается в бинарь через
+          <code>rust_embed</code>. Типы API генерируются из OpenAPI, и гейт не даёт им разойтись со
+          схемой бэкенда. Живые обновления — <code>EventSource</code> поверх SSE; библиотек состояния
+          и запросов нет.</p>
+      </div>
+      <div class="card">
+        <h3>Гейт и CI</h3>
+        <p>Один скрипт для людей, агентных сессий, git-хука и CI: fmt, сборка и тесты веба,
+          сверка типов API, <code>clippy -D warnings</code>, <code>cargo test</code>, release-сборка,
+          Go-sidecar и AST-индекс. Тест архитектуры проверяет граф зависимостей крейтов и раскладку
+          каталогов по контекстам. Красный гейт — не коммитим.</p>
+      </div>
+      <div class="card">
+        <h3>Ноды и федерация</h3>
+        <p>Нода — такая же панель со своим Xray. Мастер ходит к ней по REST с токеном области
+          <code>Node</code>, проверяя цепочку или pin сертификата: heartbeat, сбор трафика, отправка
+          набора клиентов. Исходящие адреса проходят SSRF-политику домена. Обмен между равноправными
+          панелями — отдельный путь с собственным токеном.</p>
       </div>
     </div>
   </div>
@@ -804,11 +865,12 @@
   <div class="wrap">
     <div class="sec-head">
       <h2>Статус эпиков</h2>
-      <span class="eyebrow">на 2026-08-07</span>
+      <span class="eyebrow">на 2026-10-07</span>
     </div>
-    <p class="lead">Работа идёт волнами: код-ревью → паритет с Go-версией → многоагентные аудиты.
-      Каждая арка — отдельный коммит против <span class="mono">feature/night</span> с зелёным гейтом;
-      блокеры и решения об out-of-scope зафиксированы в <span class="mono">docs/RnD/</span>.</p>
+    <p class="lead">Работа идёт волнами: код-ревью → паритет с Go-версией → многоагентные аудиты →
+      эксплуатация и редизайн структуры. Каждая арка — отдельный коммит против
+      <span class="mono">feature/night</span> с зелёным гейтом; блокеры и решения об out-of-scope
+      зафиксированы в <span class="mono">docs/RnD/</span>.</p>
     <div class="frame" style="padding:6px 6px">
       <table class="tbl">
         <thead><tr><th>Волна</th><th>Эпики</th><th>Тема</th><th>Статус</th></tr></thead>
@@ -853,7 +915,7 @@
             <td class="epic">3–8</td>
             <td class="mono">Э-47…Э-55</td>
             <td>Ultracode-волны: аудит security/domain/web, Telegram-безопасность, graceful shutdown, разбиение файлов, fmt+clippy, federation-auth, TLS/REALITY, IpLimit</td>
-            <td><span class="pill done">done · Э-55 4 из 5</span></td>
+            <td><span class="pill done">done</span></td>
           </tr>
           <tr>
             <td class="epic">—</td>
@@ -861,10 +923,59 @@
             <td>Dokodemo-door: базовое provisioning без per-client модели (домен → protobuf → JSON → API → форма), проверено вживую</td>
             <td><span class="pill done">done</span></td>
           </tr>
+          
+          <tr>
+            <td class="epic">—</td>
+            <td class="mono">Э-56…Э-59</td>
+            <td>Контракт подписки с клиентским приложением (общая фикстура), активация оплаченных заказов, аудит безопасности, денег и доступа, баги корректности</td>
+            <td><span class="pill done">done</span></td>
+          </tr>
+          <tr>
+            <td class="epic">—</td>
+            <td class="mono">Э-60…Э-61</td>
+            <td>Структурный редизайн; WireGuard-модель и AmneziaWG через sidecar-процесс</td>
+            <td><span class="pill done">done</span></td>
+          </tr>
+          <tr>
+            <td class="epic">—</td>
+            <td class="mono">Э-62…Э-72</td>
+            <td>Идеи из апстрима: несколько хостов на inbound, структура кода, федерация одним путём с честными отчётами, выпускаемый токен федерации</td>
+            <td><span class="pill done">done</span></td>
+          </tr>
+          <tr>
+            <td class="epic">—</td>
+            <td class="mono">Э-73…Э-77</td>
+            <td>Единый гейт-скрипт и CI, гигиена Rust-кода, живая проверка на Linux с настоящим Xray, Xray стартует вместе с панелью</td>
+            <td><span class="pill done">done</span></td>
+          </tr>
+          <tr>
+            <td class="epic">—</td>
+            <td class="mono">Э-78…Э-86</td>
+            <td>Режим «Xray живёт дольше панели», ротация журнала, подъём ревизии боевого развёртывания с репетицией обновления</td>
+            <td><span class="pill done">done</span></td>
+          </tr>
+          <tr>
+            <td class="epic">—</td>
+            <td class="mono">Э-87…Э-92</td>
+            <td>Исключения из IP-лимита, вкладка «Доступ», AST-индекс Rust в CI, tonic 0.14</td>
+            <td><span class="pill done">done</span></td>
+          </tr>
+          <tr>
+            <td class="epic">—</td>
+            <td class="mono">Э-93…Э-97</td>
+            <td>Производительность: индексы фоновых выборок, запись и очистка истории IP пачкой, история телеметрии по диапазону, список групп без каскада запросов</td>
+            <td><span class="pill done">done</span></td>
+          </tr>
+          <tr>
+            <td class="epic">—</td>
+            <td class="mono">Э-98</td>
+            <td>Редизайн архитектуры: гексагон × ограниченные контексты — девять крейтов, порты и сценарии по контекстам, узкие порты, тест раскладки, плагины на шине событий</td>
+            <td><span class="pill done">done</span></td>
+          </tr>
           <tr>
             <td class="epic">n/a</td>
             <td class="mono">out&nbsp;of&nbsp;scope</td>
-            <td>Tuic (нет в форке Xray) · AlterInbound для Socks/HTTP (map-модель аккаунтов) · Vendor proxy/tun и reverse.go — всё требует правки GPL-вендора</td>
+            <td>Tuic (нет исполнителя) · правка пользователей Socks/HTTP на месте (панель пересоздаёт один inbound) · Vendor proxy/tun и reverse.go — требуют правки GPL-вендора</td>
             <td><span class="pill block">закрыто решением</span></td>
           </tr>
         </tbody>
@@ -879,8 +990,8 @@
 
 <footer>
   <div class="wrap">
-    <span>3x-ui-panel · второй мозг · обновлено 2026-08-08 · <a href="/">все атласы</a></span>
-    <span>гексагон · путь A · Xray за gRPC</span>
+    <span>3x-ui-panel · второй мозг · обновлено 2026-10-07 · <a href="/">все атласы</a></span>
+    <span>гексагон × контексты · путь A · Xray за gRPC</span>
   </div>
 </footer>
 
